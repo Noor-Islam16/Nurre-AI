@@ -642,7 +642,7 @@ class ExecutionLogger {
           token_usage: tokenUsage
         },
         created_at: new Date().toISOString()
-      }).select('id')
+      } as any).select('id')
 
       if (error) {
         console.error('Failed to log tool call to database:', error)
@@ -723,7 +723,7 @@ class ExecutionLogger {
         query = query.limit(filters.limit)
       }
 
-      const { data, error } = await query
+      const { data, error } = await query as { data: any[] | null; error: any }
 
       if (error) {
         console.error('Failed to query tool calls:', error)
@@ -731,7 +731,7 @@ class ExecutionLogger {
       }
 
       // Filter the results based on JSONB content
-      let results = data || []
+      let results: any[] = data || []
       
       if (filters?.lane) {
         results = results.filter(r => (r.tool_calls as any)?.lane === filters.lane)

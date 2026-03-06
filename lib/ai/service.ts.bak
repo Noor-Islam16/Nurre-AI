@@ -1,0 +1,74 @@
+import { openai, AI_CONFIG } from './config'
+import { SYSTEM_PROMPTS, getPersonaPrompt } from './prompts'
+import { AI_FUNCTIONS } from './functions'
+
+interface ChatContext {
+  userId: string
+  persona?: string
+  currentTask?: any
+  recentMessages?: any[]
+  mood?: string
+  userEvents?: any[]
+}
+
+export class AIService {
+  async streamChat(
+    message: string,
+    context: ChatContext,
+    onChunk: (chunk: string) => void,
+    onFunction?: (func: any) => void
+  ) {
+    const systemPrompt = `${SYSTEM_PROMPTS.adhd_coach}\n\n${
+      context.persona ? getPersonaPrompt(context.persona) : ''
+    }`
+    
+    const completion = await openai.chat.completions.create({
+      model: AI_CONFIG.primaryModel,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        ...(context.recentMessages || []),
+        { role: 'user', content: message }
+      ],
+      stream: true,
+      tools: AI_FUNCTIONS as any,
+      max_tokens: AI_CONFIG.maxTokens,
+      temperature: AI_CONFIG.temperature,
+    })
+    
+    for await (const chunk of completion) {
+      if (chunk.choices[0]?.delta?.content) {
+        onChunk(chunk.choices[0].delta.content)
+      }
+      if (chunk.choices[0]?.delta?.tool_calls && onFunction) {
+        onFunction(chunk.choices[0].delta.tool_calls[0])
+      }
+    }
+  }
+  
+  async generateIntervention(context: any): Promise<string> {
+    const prompt = SYSTEM_PROMPTS.intervention(context)
+    
+    const completion = await openai.chat.completions.create({
+      model: AI_CONFIG.primaryModel,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPTS.adhd_coach },
+        { role: 'user', content: prompt }
+      ],
+      max_tokens: 200,
+      temperature: 0.7,
+    })
+    
+    return completion.choices[0].message.content || ''
+  }
+  
+  async generateEmbedding(text: string): Promise<number[]> {
+    const response = await openai.embeddings.create({
+      model: AI_CONFIG.embeddingModel,
+      input: text,
+    })
+    
+    return response.data[0].embedding
+  }
+}
+
+export const aiService = new AIService()

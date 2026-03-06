@@ -1,0 +1,38 @@
+{
+  "testEnvironment": "node",
+  "testTimeout": 30000,
+  "testPatterns": [
+    "test-*.js"
+  ],
+  "coverage": {
+    "enabled": false,
+    "threshold": {
+      "statements": 80,
+      "branches": 70,
+      "functions": 80,
+      "lines": 80
+    }
+  },
+  "suites": {
+    "stores": {
+      "files": ["test-stores.js"],
+      "description": "Store management tests"
+    },
+    "ai": {
+      "files": ["test-ai-features.js"],
+      "description": "AI functionality tests"
+    },
+    "api": {
+      "files": ["test-api-endpoints.js"],
+      "description": "API endpoint tests"
+    },
+    "database": {
+      "files": ["test-database.js"],
+      "description": "Database operation tests"
+    },
+    "integration": {
+      "files": ["test-integrations.js"],
+      "description": "Integration tests"
+    }
+  }
+}

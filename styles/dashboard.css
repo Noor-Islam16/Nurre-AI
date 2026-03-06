@@ -1,0 +1,287 @@
+/* Dashboard Widget Styles */
+.dashboard-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 1024px) {
+  .dashboard-grid {
+    grid-template-columns: 2fr 1fr;
+  }
+}
+
+/* Widget hover effects */
+.widget-card {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.widget-card:hover {
+  transform: translateY(-0.125rem);
+  box-shadow: 0 1rem 3rem -0.5rem rgba(0, 0, 0, 0.1);
+}
+
+/* Nuree AI section special styling */
+.nuree-ai-container {
+  background: linear-gradient(
+    135deg,
+    rgba(125, 103, 202, 0.05) 0%,
+    rgba(255, 255, 255, 0.9) 50%,
+    rgba(147, 51, 234, 0.05) 100%
+  );
+}
+
+/* Smooth scrolling for chat */
+.chat-messages {
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(125, 103, 202, 0.3) transparent;
+}
+
+.chat-messages::-webkit-scrollbar {
+  width: 0.375rem;
+}
+
+.chat-messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-messages::-webkit-scrollbar-thumb {
+  background: rgba(125, 103, 202, 0.3);
+  border-radius: 0.375rem;
+}
+
+.chat-messages::-webkit-scrollbar-thumb:hover {
+  background: rgba(125, 103, 202, 0.5);
+}
+
+/* Focus ring consistency */
+.focus-ring {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+}
+
+.focus-ring:focus {
+  outline-color: rgb(125, 103, 202);
+}
+
+.focus-ring:focus-visible {
+  outline-color: rgb(125, 103, 202);
+}
+
+/* Loading skeleton enhancements */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.05) 25%,
+    rgba(0, 0, 0, 0.1) 50%,
+    rgba(0, 0, 0, 0.05) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* Global text color fixes for better visibility */
+.text-primary {
+  color: rgb(17, 24, 39); /* gray-900 */
+}
+
+.text-secondary {
+  color: rgb(75, 85, 99); /* gray-600 */
+}
+
+/* Input field text visibility fixes */
+input, textarea {
+  color: rgb(17, 24, 39) !important;
+}
+
+input::placeholder, textarea::placeholder {
+  color: rgb(156, 163, 175); /* gray-400 */
+}
+
+/* Widget border radius consistency */
+.widget-rounded {
+  border-radius: 0.75rem; /* 12px in rem */
+}
+
+.widget-rounded-sm {
+  border-radius: 0.5rem; /* 8px in rem */
+}
+
+/* Enhanced shadows for widgets */
+.shadow-widget {
+  box-shadow: 0 0.25rem 0.75rem -0.125rem rgba(0, 0, 0, 0.1);
+}
+
+.shadow-widget-hover {
+  box-shadow: 0 0.5rem 1.5rem -0.25rem rgba(0, 0, 0, 0.15);
+}
+
+/* Widget gradient overlays */
+.widget-gradient-overlay {
+  position: relative;
+  overflow: hidden;
+}
+
+.widget-gradient-overlay::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, transparent 0%, rgba(255, 255, 255, 0.1) 50%, transparent 100%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Motion preferences for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Widget interaction states */
+.widget-interactive {
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+.widget-interactive::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  transform: translate(-50%, -50%);
+  transition: width 0.4s, height 0.4s;
+}
+
+.widget-interactive:active::after {
+  width: 200%;
+  height: 200%;
+}
+
+/* Dashboard container responsive padding */
+.dashboard-container {
+  padding: 1rem;
+}
+
+@media (min-width: 640px) {
+  .dashboard-container {
+    padding: 1.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .dashboard-container {
+    padding: 2rem;
+  }
+}
+
+/* Widget title styling */
+.widget-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: rgb(17, 24, 39);
+}
+
+.widget-subtitle {
+  font-size: 0.75rem;
+  color: rgb(107, 114, 128);
+  margin-top: 0.25rem;
+}
+
+/* Quick action buttons in widgets */
+.widget-action-btn {
+  font-size: 0.75rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.375rem;
+  transition: all 0.2s;
+}
+
+.widget-action-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0.25rem 0.5rem rgba(0, 0, 0, 0.1);
+}
+
+/* Progress bars in widgets */
+.widget-progress {
+  height: 0.5rem;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 0.25rem;
+  overflow: hidden;
+}
+
+.widget-progress-bar {
+  height: 100%;
+  transition: width 0.5s ease-out;
+  background: linear-gradient(90deg, var(--progress-start), var(--progress-end));
+}
+
+/* Notification badges */
+.widget-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.375rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: white;
+  background: rgb(239, 68, 68);
+  border-radius: 0.625rem;
+}
+
+/* Dashboard stats animation */
+@keyframes stat-update {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.stat-updated {
+  animation: stat-update 0.5s ease-in-out;
+}
+
+/* Widget icon styling */
+.widget-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  transition: all 0.2s;
+}
+
+.widget-card:hover .widget-icon {
+  transform: rotate(-10deg) scale(1.1);
+}
+
+/* Dark mode support (if needed in future) */
+@media (prefers-color-scheme: dark) {
+  /* Override for dark mode if implemented */
+  .dashboard-grid {
+    --widget-bg: rgba(255, 255, 255, 0.05);
+  }
+}

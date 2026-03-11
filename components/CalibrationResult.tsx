@@ -5,7 +5,6 @@ import { useCalibrationStore, LOOP_META } from "@/store/calibrationStore";
 import { apiStartFocusSession, getTrackUrl } from "@/lib/calibrationApi";
 import type { LoopState } from "@/types/calibration";
 
-// Placeholder preview tracks per loop (same pattern as FocusMode)
 const LOOP_PREVIEW_TRACK: Record<string, string> = {
   Start: getTrackUrl("track_01"),
   Ground: getTrackUrl("track_03"),
@@ -14,7 +13,6 @@ const LOOP_PREVIEW_TRACK: Record<string, string> = {
   Flow: getTrackUrl("track_09"),
 };
 
-// Metric explanations
 const METRIC_EXPLANATIONS: Record<string, string> = {
   FSS: "Focus Sound Signature — your unique auditory fingerprint across all five calibration dimensions.",
   "Gravity Level":
@@ -32,7 +30,6 @@ const VECTOR_EXPLANATIONS: Record<string, string> = {
   Grounding: "Preference for deep, earthy tones vs airy, elevated ones.",
 };
 
-// Insight generator based on regulation vector
 function generateInsights(reg: {
   x1: number;
   x2: number;
@@ -67,7 +64,6 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
     return () => clearTimeout(t);
   }, []);
 
-  // Cleanup preview on unmount
   useEffect(() => {
     return () => {
       if (previewRef.current) {
@@ -82,12 +78,12 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
 
   const loop = outputs.assigned_loop;
   const meta = LOOP_META[loop];
-  const loopColor = meta.color;
+  // Use emerald green as the loop accent color
+  const loopColor = "#059669";
   const insights = generateInsights(outputs.regulation_vector);
 
   function togglePreview() {
     if (isPreviewing) {
-      // Stop
       if (previewRef.current) {
         previewRef.current.pause();
         previewRef.current = null;
@@ -107,7 +103,6 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
       .play()
       .then(() => {
         setIsPreviewing(true);
-        // Auto-stop after 30s
         previewTimerRef.current = setTimeout(() => {
           if (previewRef.current) {
             previewRef.current.pause();
@@ -123,7 +118,6 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
   }
 
   async function handleEnterFocus() {
-    // Stop preview if playing
     if (previewRef.current) {
       previewRef.current.pause();
       previewRef.current = null;
@@ -140,7 +134,7 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
   }
 
   return (
-    <div style={{ maxWidth: "640px", width: "100%" }}>
+    <div style={{ maxWidth: "580px", width: "100%", margin: "0 auto" }}>
       {/* Header */}
       <div
         className="fade-up"
@@ -149,7 +143,6 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
         <p className="nuree-label" style={{ marginBottom: "0.75rem" }}>
           Your Sound Profile
         </p>
-        {/* HERO loop name */}
         <h1
           style={{
             fontFamily: "Playfair Display, Georgia, serif",
@@ -177,8 +170,9 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
         style={{
           padding: "1.5rem",
           marginBottom: "1rem",
-          borderColor: `${loopColor}30`,
-          background: `linear-gradient(135deg, var(--surface) 0%, ${loopColor}08 100%)`,
+          maxWidth: "100%",
+          borderColor: `rgba(5,150,105,0.2)`,
+          background: `linear-gradient(135deg, #ffffff 0%, rgba(5,150,105,0.04) 100%)`,
         }}
       >
         <p className="nuree-label" style={{ marginBottom: "1rem" }}>
@@ -200,7 +194,7 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
                 alignItems: "center",
                 gap: "0.6rem",
                 fontSize: "0.88rem",
-                color: "var(--text)",
+                color: "#111827",
               }}
             >
               <span
@@ -224,12 +218,15 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
         style={{
           padding: "1.5rem",
           marginBottom: "1rem",
+          maxWidth: "100%",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
           gap: "1rem",
-          borderColor: isPreviewing ? `${loopColor}50` : "var(--border)",
-          background: isPreviewing ? `${loopColor}08` : "var(--surface)",
+          borderColor: isPreviewing
+            ? `rgba(5,150,105,0.3)`
+            : "rgba(0,0,0,0.08)",
+          background: isPreviewing ? `rgba(5,150,105,0.05)` : "#ffffff",
           transition: "all 0.3s ease",
         }}
       >
@@ -240,7 +237,7 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
           <p
             style={{
               fontSize: "1.1rem",
-              color: "var(--text)",
+              color: "#111827",
               fontFamily: "Playfair Display, serif",
             }}
           >
@@ -249,7 +246,7 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
           <p
             style={{
               fontSize: "0.75rem",
-              color: "var(--muted)",
+              color: "#6b7280",
               marginTop: "0.2rem",
             }}
           >
@@ -261,7 +258,7 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
             <p
               style={{
                 fontSize: "0.72rem",
-                color: "#F5A0A0",
+                color: "#dc2626",
                 marginTop: "0.3rem",
               }}
             >
@@ -277,13 +274,13 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
             height: "48px",
             borderRadius: "50%",
             background: isPreviewing ? loopColor : "transparent",
-            border: `1px solid ${isPreviewing ? loopColor : "var(--border)"}`,
+            border: `1px solid ${isPreviewing ? loopColor : "rgba(0,0,0,0.08)"}`,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             cursor: "pointer",
             transition: "all 0.2s ease",
-            color: isPreviewing ? "#080A0F" : "var(--text)",
+            color: isPreviewing ? "#ffffff" : "#111827",
           }}
         >
           {isPreviewing ? <PauseIcon /> : <PlayIcon />}
@@ -297,8 +294,6 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
           onClick={handleEnterFocus}
           disabled={entering}
           style={{
-            background: loopColor,
-            color: "#080A0F",
             width: "100%",
             justifyContent: "center",
             padding: "1rem 2rem",
@@ -357,27 +352,28 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
       {tooltip && (
         <div
           style={{
-            background: "var(--surface)",
-            border: "1px solid var(--border)",
+            background: "#ffffff",
+            border: "1px solid rgba(0,0,0,0.08)",
             borderRadius: "10px",
             padding: "0.75rem 1rem",
             fontSize: "0.78rem",
-            color: "var(--muted)",
+            color: "#6b7280",
             marginBottom: "1rem",
             lineHeight: 1.6,
             animation: "fadeUp 0.2s ease forwards",
+            boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
           }}
           onClick={() => setTooltip(null)}
         >
           {tooltip}{" "}
-          <span style={{ color: "var(--accent)", cursor: "pointer" }}>✕</span>
+          <span style={{ color: "#059669", cursor: "pointer" }}>✕</span>
         </div>
       )}
 
       {/* Regulation vector */}
       <div
         className="nuree-card fade-up fade-up-delay-3"
-        style={{ padding: "1.5rem", marginBottom: "1.5rem" }}
+        style={{ padding: "1.5rem", marginBottom: "1.5rem", maxWidth: "100%" }}
       >
         <p className="nuree-label" style={{ marginBottom: "1.25rem" }}>
           Auditory regulation vector
@@ -430,7 +426,12 @@ function MetricCard({
   return (
     <div
       className="nuree-card"
-      style={{ padding: "1.25rem", textAlign: "center", cursor: "help" }}
+      style={{
+        padding: "1.25rem",
+        textAlign: "center",
+        cursor: "help",
+        maxWidth: "100%",
+      }}
       onClick={() => onTooltip(explanation)}
       title={explanation}
     >
@@ -446,9 +447,7 @@ function MetricCard({
         <p className="nuree-label" style={{ margin: 0 }}>
           {label}
         </p>
-        <span
-          style={{ fontSize: "0.6rem", color: "var(--muted)", opacity: 0.6 }}
-        >
+        <span style={{ fontSize: "0.6rem", color: "#6b7280", opacity: 0.6 }}>
           ⓘ
         </span>
       </div>
@@ -457,7 +456,7 @@ function MetricCard({
           fontSize: mono ? "0.9rem" : "1.5rem",
           fontFamily: mono ? "monospace" : "Playfair Display, serif",
           fontWeight: 400,
-          color: "var(--text)",
+          color: "#111827",
           letterSpacing: mono ? "0.08em" : "-0.02em",
           lineHeight: 1,
         }}
@@ -467,7 +466,7 @@ function MetricCard({
           <span
             style={{
               fontSize: "0.75rem",
-              color: "var(--muted)",
+              color: "#6b7280",
               marginLeft: "2px",
             }}
           >
@@ -508,7 +507,7 @@ function VectorBar({
         <span
           style={{
             fontSize: "0.78rem",
-            color: "var(--muted)",
+            color: "#6b7280",
             display: "flex",
             alignItems: "center",
             gap: "0.25rem",
@@ -520,7 +519,7 @@ function VectorBar({
         <span
           style={{
             fontSize: "0.78rem",
-            color: "var(--muted)",
+            color: "#6b7280",
             fontVariantNumeric: "tabular-nums",
           }}
         >
@@ -531,7 +530,7 @@ function VectorBar({
       <div
         style={{
           height: "4px",
-          background: "var(--border)",
+          background: "rgba(0,0,0,0.08)",
           borderRadius: "4px",
           position: "relative",
           overflow: "visible",
@@ -544,7 +543,7 @@ function VectorBar({
             top: "-2px",
             width: "1px",
             height: "8px",
-            background: "rgba(255,255,255,0.1)",
+            background: "rgba(0,0,0,0.1)",
           }}
         />
         <div

@@ -47,10 +47,10 @@ export function CalibrationIntro({ onBegin, loading }: Props) {
           gap: "0.5rem",
           padding: "0.5rem 1rem",
           borderRadius: "100px",
-          border: "1px solid var(--accent)",
-          background: "var(--accent-glow)",
+          border: "1px solid #059669",
+          background: "rgba(5,150,105,0.08)",
           fontSize: "0.8rem",
-          color: "var(--accent)",
+          color: "#059669",
           letterSpacing: "0.04em",
           marginBottom: "1.75rem",
         }}
@@ -75,9 +75,9 @@ export function CalibrationIntro({ onBegin, loading }: Props) {
             style={{
               padding: "0.3rem 0.8rem",
               borderRadius: "100px",
-              border: "1px solid var(--border)",
+              border: "1px solid rgba(0,0,0,0.08)",
               fontSize: "0.75rem",
-              color: "var(--muted)",
+              color: "#6b7280",
               letterSpacing: "0.04em",
             }}
           >
@@ -161,7 +161,7 @@ function WaveformIcon() {
           width="5"
           height={bar.h}
           rx="2.5"
-          fill="var(--accent)"
+          fill="#059669"
           opacity="0.7"
           style={{
             animation: `barPulse 1.8s ease-in-out infinite alternate`,

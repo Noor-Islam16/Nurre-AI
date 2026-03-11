@@ -1,39 +1,40 @@
-'use client'
+"use client";
 
-import { useEffect, useRef } from 'react'
-import { motion } from 'framer-motion'
-import { useDashboardStore } from '@/store/dashboard-store'
-import { useTaskStore } from '@/store/task-store'
-import { useRewardsStore } from '@/store/rewards-store'
-import { DashboardCardSkeleton } from '@/components/ui/skeleton-loader'
-import { DynamicBackground } from '@/components/ui/dynamic-background'
-import { BookingReminderSection } from './dashboard/BookingReminderSection'
+import { useEffect, useRef } from "react";
+import { motion } from "framer-motion";
+import { useDashboardStore } from "@/store/dashboard-store";
+import { useTaskStore } from "@/store/task-store";
+import { useRewardsStore } from "@/store/rewards-store";
+import { DashboardCardSkeleton } from "@/components/ui/skeleton-loader";
+import { DynamicBackground } from "@/components/ui/dynamic-background";
+import { BookingReminderSection } from "./dashboard/BookingReminderSection";
 
 // Import dashboard components
-import { NureeAISection } from './dashboard/nuree-ai-section'
-import { DashboardSummaryBar } from './dashboard/dashboard-summary-bar'
+import { NureeAISection } from "./dashboard/nuree-ai-section";
+import { DashboardSummaryBar } from "./dashboard/dashboard-summary-bar";
 
 interface DashboardProps {
-  sessionId: string | null
+  sessionId: string | null;
 }
 
 export function Dashboard({ sessionId }: DashboardProps) {
   // Keep store subscription to allow child widgets to update independently
-  useDashboardStore()
-  const { fetchTasks } = useTaskStore()
-  const { fetchRewards, fetchGrowthPoints, claimDailyBonus } = useRewardsStore()
-  const didInitRef = useRef(false)
+  useDashboardStore();
+  const { fetchTasks } = useTaskStore();
+  const { fetchRewards, fetchGrowthPoints, claimDailyBonus } =
+    useRewardsStore();
+  const didInitRef = useRef(false);
 
   // Initialize data on mount
   useEffect(() => {
-    if (didInitRef.current) return
-    didInitRef.current = true
-    fetchTasks()
-    fetchRewards()
-    fetchGrowthPoints()
-    claimDailyBonus()
+    if (didInitRef.current) return;
+    didInitRef.current = true;
+    fetchTasks();
+    fetchRewards();
+    fetchGrowthPoints();
+    claimDailyBonus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, []);
 
   // Do not gate entire dashboard on global loading; child widgets handle their own loading states
 
@@ -47,10 +48,7 @@ export function Dashboard({ sessionId }: DashboardProps) {
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.1 }}
         >
-          <NureeAISection
-            sessionId={sessionId || undefined}
-            fullHeight
-          />
+          <NureeAISection sessionId={sessionId || undefined} fullHeight />
         </motion.div>
 
         {/* Booking Reminder - Conditional */}
@@ -60,5 +58,5 @@ export function Dashboard({ sessionId }: DashboardProps) {
         <DashboardSummaryBar />
       </div>
     </div>
-  )
+  );
 }

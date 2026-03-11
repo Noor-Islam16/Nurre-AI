@@ -23,7 +23,6 @@ export default function CalibratorPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // On mount: check if user already has a profile → skip to result
   useEffect(() => {
     async function checkProfile() {
       try {
@@ -51,7 +50,6 @@ export default function CalibratorPage() {
     setError(null);
     try {
       const { session_id } = await apiStartSession();
-      // startCalibration sets step → 'pair' directly (skips intro)
       startCalibration(session_id);
     } catch (err: unknown) {
       const msg =
@@ -76,12 +74,12 @@ export default function CalibratorPage() {
             top: "1.5rem",
             left: "50%",
             transform: "translateX(-50%)",
-            background: "#2A1A1A",
-            border: "1px solid #7A3A3A",
+            background: "#fef2f2",
+            border: "1px solid #fca5a5",
             borderRadius: "8px",
             padding: "0.75rem 1.25rem",
             fontSize: "0.85rem",
-            color: "#F5A0A0",
+            color: "#dc2626",
             zIndex: 100,
             maxWidth: "360px",
             textAlign: "center",

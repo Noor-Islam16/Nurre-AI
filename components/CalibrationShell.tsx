@@ -15,16 +15,16 @@ export function CalibrationShell({ children }: { children: ReactNode }) {
 
       <style>{`
         :root {
-          --bg:         #080A0F;
-          --surface:    #0E1118;
-          --border:     rgba(255,255,255,0.07);
-          --text:       #E8E4DC;
-          --muted:      rgba(232,228,220,0.45);
-          --accent:     #C8B89A;
-          --accent-glow:rgba(200,184,154,0.15);
-          --green:      #7EB8A4;
-          --blue:       #8A9EC2;
-          --purple:     #9B7EB8;
+          --bg:         #f7f9fa;
+          --surface:    #ffffff;
+          --border:     rgba(0,0,0,0.08);
+          --text:       #111827;
+          --muted:      #6b7280;
+          --accent:     #059669;
+          --accent-glow:rgba(5,150,105,0.10);
+          --green:      #059669;
+          --blue:       #3b82f6;
+          --purple:     #8b5cf6;
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -48,24 +48,24 @@ export function CalibrationShell({ children }: { children: ReactNode }) {
           border-radius: 50%;
           filter: blur(120px);
           pointer-events: none;
-          opacity: 0.35;
+          opacity: 0.18;
           animation: drift 18s ease-in-out infinite alternate;
         }
         .orb-1 {
           width: 600px; height: 600px;
-          background: radial-gradient(circle, #2A3A5C 0%, transparent 70%);
+          background: radial-gradient(circle, #a7f3d0 0%, transparent 70%);
           top: -200px; left: -150px;
           animation-delay: 0s;
         }
         .orb-2 {
           width: 500px; height: 500px;
-          background: radial-gradient(circle, #3A2A4A 0%, transparent 70%);
+          background: radial-gradient(circle, #d1fae5 0%, transparent 70%);
           bottom: -100px; right: -100px;
           animation-delay: -6s;
         }
         .orb-3 {
           width: 350px; height: 350px;
-          background: radial-gradient(circle, #1E3A30 0%, transparent 70%);
+          background: radial-gradient(circle, #bbf7d0 0%, transparent 70%);
           top: 40%; left: 60%;
           animation-delay: -12s;
         }
@@ -81,7 +81,7 @@ export function CalibrationShell({ children }: { children: ReactNode }) {
           inset: 0;
           pointer-events: none;
           z-index: 1;
-          opacity: 0.025;
+          opacity: 0.015;
           background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
           background-size: 200px;
         }
@@ -107,6 +107,7 @@ export function CalibrationShell({ children }: { children: ReactNode }) {
           width: 100%;
           position: relative;
           backdrop-filter: blur(20px);
+          box-shadow: 0 1px 4px rgba(0,0,0,0.06);
         }
 
         .nuree-label {
@@ -148,13 +149,13 @@ export function CalibrationShell({ children }: { children: ReactNode }) {
         }
 
         .nuree-btn-primary {
-          background: var(--accent);
-          color: #080A0F;
+          background: #059669;
+          color: #ffffff;
         }
         .nuree-btn-primary:hover {
-          background: #D9CAAC;
+          background: #047857;
           transform: translateY(-1px);
-          box-shadow: 0 8px 24px rgba(200,184,154,0.25);
+          box-shadow: 0 8px 24px rgba(5,150,105,0.20);
         }
 
         .nuree-btn-ghost {
@@ -163,7 +164,7 @@ export function CalibrationShell({ children }: { children: ReactNode }) {
           border: 1px solid var(--border);
         }
         .nuree-btn-ghost:hover {
-          border-color: rgba(255,255,255,0.15);
+          border-color: rgba(0,0,0,0.18);
           color: var(--text);
         }
 

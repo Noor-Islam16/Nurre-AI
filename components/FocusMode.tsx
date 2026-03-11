@@ -9,11 +9,6 @@ import {
 } from "@/lib/calibrationApi";
 import type { LoopState } from "@/types/calibration";
 
-// ─── Placeholder mapping ──────────────────────────────────────
-// Maps each loop to a calibration track as placeholder
-// until real focus loop files are uploaded to Supabase Storage.
-// Replace with getLoopUrl(loop) once your focus-loops bucket is ready.
-
 const LOOP_PLACEHOLDER_TRACK: Record<LoopState, string> = {
   Start: getTrackUrl("track_01"),
   Ground: getTrackUrl("track_03"),
@@ -23,7 +18,6 @@ const LOOP_PLACEHOLDER_TRACK: Record<LoopState, string> = {
 };
 
 function resolveLoopUrl(loop: LoopState): string {
-  // Switch this to `return getLoopUrl(loop)` once focus loops are uploaded
   return LOOP_PLACEHOLDER_TRACK[loop];
 }
 
@@ -41,23 +35,20 @@ export function FocusMode() {
 
   const loop = (outputs?.assigned_loop ?? "Flow") as LoopState;
   const meta = LOOP_META[loop];
-  const loopColor = meta.color;
+  // Use emerald green as the focus color
+  const loopColor = "#059669";
   const loopUrl = resolveLoopUrl(loop);
 
-  // Initialise audio on mount
   useEffect(() => {
     setAudioError(null);
 
     const audio = new Audio();
     audio.loop = true;
     audio.volume = volume;
-    // audio.preload = "auto";
     audio.src = loopUrl;
 
-    // Log load errors so we can debug
     audio.addEventListener("error", (e) => {
       const err = (e.target as HTMLAudioElement).error;
-      // ✅ Ignore error code 4 (empty src) — src is valid, ignore transient errors
       if (!err || err.code === 4) return;
       const msg = `Audio error ${err.code}: ${err.message}`;
       console.error("[FocusMode] audio error:", msg);
@@ -74,7 +65,6 @@ export function FocusMode() {
         setIsPlaying(true);
       })
       .catch((err) => {
-        // Ignore interrupted play requests — happens on mount, audio still plays
         if (err.name === "AbortError") return;
         console.error("[FocusMode] play() rejected:", err);
         setAudioError(`Playback blocked: ${err.message}. Click play to start.`);
@@ -93,7 +83,6 @@ export function FocusMode() {
     };
   }, [loopUrl]);
 
-  // Sync volume changes
   useEffect(() => {
     if (audioRef.current) audioRef.current.volume = volume;
   }, [volume]);
@@ -115,7 +104,6 @@ export function FocusMode() {
         .play()
         .then(() => {
           setIsPlaying(true);
-          // Resume timer from where it left off
           timerRef.current = setInterval(() => {
             setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000));
           }, 1000);
@@ -183,7 +171,7 @@ export function FocusMode() {
         <p
           style={{
             fontSize: "0.8rem",
-            color: "#F5A0A0",
+            color: "#dc2626",
             marginBottom: "1rem",
             maxWidth: "320px",
             margin: "0 auto 1rem",
@@ -202,7 +190,7 @@ export function FocusMode() {
           style={{
             fontFamily: "DM Mono, Courier New, monospace",
             fontSize: "2.5rem",
-            color: "var(--text)",
+            color: "#111827",
             letterSpacing: "0.1em",
             fontWeight: 300,
           }}
@@ -235,7 +223,7 @@ export function FocusMode() {
             alignItems: "center",
             justifyContent: "center",
             transition: "transform 0.15s ease, box-shadow 0.15s ease",
-            boxShadow: `0 0 32px ${loopColor}50`,
+            boxShadow: `0 0 32px rgba(5,150,105,0.30)`,
           }}
           onMouseEnter={(e) =>
             (e.currentTarget.style.transform = "scale(1.05)")
@@ -322,8 +310,8 @@ function FocusOrb({ color, isPlaying }: { color: string; isPlaying: boolean }) {
           position: "absolute",
           inset: "20px",
           borderRadius: "50%",
-          background: `radial-gradient(circle, ${color}40 0%, ${color}10 60%, transparent 100%)`,
-          border: `1px solid ${color}60`,
+          background: `radial-gradient(circle, rgba(5,150,105,0.25) 0%, rgba(5,150,105,0.06) 60%, transparent 100%)`,
+          border: `1px solid rgba(5,150,105,0.4)`,
           animation: isPlaying ? `focusOrb 4s ease-in-out infinite` : "none",
         }}
       />
@@ -332,7 +320,7 @@ function FocusOrb({ color, isPlaying }: { color: string; isPlaying: boolean }) {
           position: "absolute",
           inset: "45px",
           borderRadius: "50%",
-          background: `radial-gradient(circle, ${color}60 0%, transparent 80%)`,
+          background: `radial-gradient(circle, rgba(5,150,105,0.35) 0%, transparent 80%)`,
           filter: "blur(8px)",
         }}
       />
@@ -343,7 +331,7 @@ function FocusOrb({ color, isPlaying }: { color: string; isPlaying: boolean }) {
 function PlayIcon() {
   return (
     <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-      <path d="M7 4l12 7-12 7V4z" fill="#080A0F" />
+      <path d="M7 4l12 7-12 7V4z" fill="#ffffff" />
     </svg>
   );
 }
@@ -351,8 +339,8 @@ function PlayIcon() {
 function PauseIcon() {
   return (
     <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-      <rect x="5" y="4" width="4" height="14" rx="1.5" fill="#080A0F" />
-      <rect x="13" y="4" width="4" height="14" rx="1.5" fill="#080A0F" />
+      <rect x="5" y="4" width="4" height="14" rx="1.5" fill="#ffffff" />
+      <rect x="13" y="4" width="4" height="14" rx="1.5" fill="#ffffff" />
     </svg>
   );
 }
@@ -368,14 +356,14 @@ function VolumeIcon({ low }: { low?: boolean }) {
     >
       <path
         d="M3 6h2l3-3v10l-3-3H3V6z"
-        stroke="var(--text)"
+        stroke="#111827"
         strokeWidth="1.2"
         fill="none"
       />
       {!low && (
         <path
           d="M11 4c1.5 1 2.5 2.5 2.5 4s-1 3-2.5 4"
-          stroke="var(--text)"
+          stroke="#111827"
           strokeWidth="1.2"
           strokeLinecap="round"
           fill="none"

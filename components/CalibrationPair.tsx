@@ -33,14 +33,11 @@ export function CalibrationPair() {
 
   const config = PAIR_TRACK_CONFIG[current_pair_index - 1];
 
-  // "idle" | "playing-a" | "playing-b" | "selected-a" | "selected-b"
   type TrackState = "idle" | "playing" | "selected" | "done";
   const [stateA, setStateA] = useState<TrackState>("idle");
   const [stateB, setStateB] = useState<TrackState>("idle");
 
-  // Which track is actively playing
   const [currentPlaying, setCurrentPlaying] = useState<"A" | "B" | null>(null);
-  // Which track user chose
   const [chosen, setChosen] = useState<"A" | "B" | null>(null);
 
   const [replays, setReplays] = useState(0);
@@ -53,7 +50,6 @@ export function CalibrationPair() {
   const startedAtRef = useRef<number>(Date.now());
   const autoPlayBRef = useRef(false);
 
-  // Reset when pair changes
   useEffect(() => {
     setStateA("idle");
     setStateB("idle");
@@ -105,10 +101,8 @@ export function CalibrationPair() {
 
     const audio = new Audio(url);
     audio.volume = 0.85;
-    // No loop — we want ended event
     audio.loop = false;
 
-    // Auto-play B after A finishes (first time only)
     if (track === "A") {
       audio.onended = () => {
         if (!autoPlayBRef.current) {
@@ -129,7 +123,6 @@ export function CalibrationPair() {
 
     if (track === "A") {
       setStateA("playing");
-      // Keep B as-is unless it was playing
       setStateB((prev) => (prev === "playing" ? "idle" : prev));
     } else {
       setStateB("playing");
@@ -141,33 +134,25 @@ export function CalibrationPair() {
     if (confirming) return;
 
     const state = track === "A" ? stateA : stateB;
-    const otherState = track === "A" ? stateB : stateA;
-    const setThis = track === "A" ? setStateA : setStateB;
-    const setOther = track === "A" ? setStateB : setStateA;
 
-    // If already selected → do nothing (committed)
     if (chosen !== null) return;
 
     if (state === "idle") {
-      // First tap: play
       playTrack(track);
       return;
     }
 
     if (state === "playing") {
-      // Second tap on the playing track → select it
       selectTrack(track);
       return;
     }
 
-    // Was replaying / finished → play again
     playTrack(track);
   }
 
   function selectTrack(track: "A" | "B") {
     if (confirming || chosen !== null) return;
 
-    // Stop audio
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.onended = null;
@@ -178,7 +163,6 @@ export function CalibrationPair() {
     setStateA(track === "A" ? "selected" : "done");
     setStateB(track === "B" ? "selected" : "done");
 
-    // Brief AI feedback then auto-confirm
     setShowFeedback(true);
     setTimeout(() => {
       setShowFeedback(false);
@@ -223,7 +207,6 @@ export function CalibrationPair() {
   if (!config) return null;
 
   const progress = ((current_pair_index - 1) / 5) * 100;
-  const progressNext = (current_pair_index / 5) * 100;
 
   return (
     <div className="nuree-card fade-up" style={{ maxWidth: "640px" }}>
@@ -237,12 +220,12 @@ export function CalibrationPair() {
         }}
       >
         <p className="nuree-label">Step {current_pair_index} of 5</p>
-        <p className="nuree-label" style={{ color: "var(--accent)" }}>
+        <p className="nuree-label" style={{ color: "#059669" }}>
           {config.axis}
         </p>
       </div>
 
-      {/* Progress bar with percentage */}
+      {/* Progress bar */}
       <div style={{ marginBottom: "2.25rem" }}>
         <div className="nuree-progress-bar">
           <div
@@ -257,10 +240,10 @@ export function CalibrationPair() {
             marginTop: "0.4rem",
           }}
         >
-          <span style={{ fontSize: "0.7rem", color: "var(--muted)" }}>
+          <span style={{ fontSize: "0.7rem", color: "#6b7280" }}>
             {Math.round(progress)}% complete
           </span>
-          <span style={{ fontSize: "0.7rem", color: "var(--muted)" }}>
+          <span style={{ fontSize: "0.7rem", color: "#6b7280" }}>
             {5 - current_pair_index + 1} left
           </span>
         </div>
@@ -293,7 +276,7 @@ export function CalibrationPair() {
           <p
             style={{
               fontSize: "0.78rem",
-              color: "var(--accent)",
+              color: "#059669",
               letterSpacing: "0.06em",
               animation: "fadeUp 0.3s ease forwards",
             }}
@@ -318,28 +301,27 @@ export function CalibrationPair() {
           const isSelected = state === "selected";
           const isDone = state === "done";
 
-          let borderColor = "var(--border)";
-          let bg = "rgba(255,255,255,0.03)";
+          let borderColor = "rgba(0,0,0,0.08)";
+          let bg = "rgba(0,0,0,0.02)";
           let labelText = "Tap to listen";
-          let labelColor = "var(--muted)";
+          let labelColor = "#6b7280";
 
           if (isPlaying) {
-            borderColor = "var(--accent)";
-            bg = "var(--accent-glow)";
+            borderColor = "#059669";
+            bg = "rgba(5,150,105,0.08)";
             labelText = "⏸ Playing · tap to choose";
-            labelColor = "var(--accent)";
+            labelColor = "#059669";
           } else if (isSelected) {
-            borderColor = "var(--green)";
-            bg = "rgba(126,184,164,0.12)";
+            borderColor = "#059669";
+            bg = "rgba(5,150,105,0.10)";
             labelText = "✓ Selected";
-            labelColor = "var(--green)";
+            labelColor = "#059669";
           } else if (isDone) {
-            borderColor = "var(--border)";
-            bg = "rgba(255,255,255,0.015)";
+            borderColor = "rgba(0,0,0,0.06)";
+            bg = "rgba(0,0,0,0.01)";
             labelText = "Not chosen";
-            labelColor = "var(--muted)";
+            labelColor = "#6b7280";
           } else if (currentPlaying !== null && state === "idle") {
-            // Has been exposed but not currently active
             labelText = "▶ Play again";
           }
 
@@ -362,7 +344,7 @@ export function CalibrationPair() {
                 cursor: confirming || chosen !== null ? "default" : "pointer",
                 transition: "all 0.2s ease",
                 overflow: "hidden",
-                color: "var(--text)",
+                color: "#111827",
                 opacity: isDone ? 0.45 : 1,
               }}
             >
@@ -372,10 +354,10 @@ export function CalibrationPair() {
                   fontSize: "2.75rem",
                   fontWeight: 400,
                   color: isSelected
-                    ? "var(--green)"
+                    ? "#059669"
                     : isPlaying
-                      ? "var(--accent)"
-                      : "var(--text)",
+                      ? "#059669"
+                      : "#111827",
                   lineHeight: 1,
                   transition: "color 0.2s ease",
                 }}
@@ -401,13 +383,13 @@ export function CalibrationPair() {
         })}
       </div>
 
-      {/* Hint — only show until both sounds heard */}
+      {/* Hints */}
       {!chosen && currentPlaying === null && (
         <p
           style={{
             textAlign: "center",
             fontSize: "0.78rem",
-            color: "var(--muted)",
+            color: "#6b7280",
             marginBottom: "0.5rem",
           }}
         >
@@ -419,7 +401,7 @@ export function CalibrationPair() {
           style={{
             textAlign: "center",
             fontSize: "0.78rem",
-            color: "var(--muted)",
+            color: "#6b7280",
             marginBottom: "0.5rem",
           }}
         >
@@ -433,7 +415,7 @@ export function CalibrationPair() {
           style={{
             textAlign: "center",
             fontSize: "0.8rem",
-            color: "#F5A0A0",
+            color: "#dc2626",
             marginTop: "0.5rem",
           }}
         >
@@ -472,7 +454,7 @@ function PlayingRipple() {
             width: "80px",
             height: "80px",
             borderRadius: "50%",
-            border: "1px solid var(--accent)",
+            border: "1px solid #059669",
             opacity: 0,
             animation: `pulse-ring 2s ease-out infinite`,
             animationDelay: `${i * 0.65}s`,

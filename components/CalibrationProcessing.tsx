@@ -98,7 +98,7 @@ function ProcessingVisual() {
           cy="40"
           r="34"
           fill="none"
-          stroke="var(--border)"
+          stroke="rgba(0,0,0,0.08)"
           strokeWidth="2"
         />
         <circle
@@ -106,7 +106,7 @@ function ProcessingVisual() {
           cy="40"
           r="34"
           fill="none"
-          stroke="var(--accent)"
+          stroke="#059669"
           strokeWidth="2"
           strokeDasharray="40 174"
           strokeLinecap="round"
@@ -131,7 +131,7 @@ function ProcessingVisual() {
               width: "6px",
               height: "6px",
               borderRadius: "50%",
-              background: "var(--accent)",
+              background: "#059669",
               animation: `processDot 1.4s ease-in-out infinite`,
               animationDelay: `${i * 0.2}s`,
             }}

@@ -1,6 +1,30 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
+const PROCESSING_MESSAGES = [
+  "Analyzing your auditory preferences…",
+  "Computing regulation vector…",
+  "Matching to focus environments…",
+  "Generating your sound profile…",
+  "Almost ready…",
+];
+
 export function CalibrationProcessing() {
+  const [msgIndex, setMsgIndex] = useState(0);
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setVisible(false);
+      setTimeout(() => {
+        setMsgIndex((i) => (i + 1) % PROCESSING_MESSAGES.length);
+        setVisible(true);
+      }, 300);
+    }, 1800);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <div className="nuree-card fade-up" style={{ textAlign: "center" }}>
       <div style={{ marginBottom: "2rem" }}>
@@ -8,22 +32,32 @@ export function CalibrationProcessing() {
       </div>
 
       <p className="nuree-label" style={{ marginBottom: "1rem" }}>
-        Analysing your responses
+        Calibration Complete
       </p>
 
       <h2
         className="nuree-title"
-        style={{ fontSize: "1.75rem", marginBottom: "1rem" }}
+        style={{ fontSize: "1.75rem", marginBottom: "1.25rem" }}
       >
-        Building your
+        Generating your
         <br />
         sound profile
       </h2>
 
-      <p className="nuree-body" style={{ maxWidth: "320px", margin: "0 auto" }}>
-        Computing your auditory regulation vector and assigning your focus
-        environment…
-      </p>
+      <div style={{ height: "1.5rem", marginBottom: "0.5rem" }}>
+        <p
+          className="nuree-body"
+          style={{
+            maxWidth: "320px",
+            margin: "0 auto",
+            fontSize: "0.85rem",
+            transition: "opacity 0.3s ease",
+            opacity: visible ? 1 : 0,
+          }}
+        >
+          {PROCESSING_MESSAGES[msgIndex]}
+        </p>
+      </div>
 
       <style>{`
         @keyframes spin {

@@ -31,11 +31,33 @@ export function CalibrationIntro({ onBegin, loading }: Props) {
 
       <p
         className="nuree-body fade-up fade-up-delay-3"
-        style={{ maxWidth: "380px", margin: "0 auto 2.5rem" }}
+        style={{ maxWidth: "380px", margin: "0 auto 2rem" }}
       >
-        Five short comparisons. Choose the sound that feels more natural to you.
-        There are no right or wrong answers — your instinct is the signal.
+        This quick calibration helps Nuree generate soundscapes tuned to your
+        brain. Five short comparisons — trust your instinct, there are no right
+        or wrong answers.
       </p>
+
+      {/* Headphones recommended badge */}
+      <div
+        className="fade-up fade-up-delay-3"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "0.5rem",
+          padding: "0.5rem 1rem",
+          borderRadius: "100px",
+          border: "1px solid var(--accent)",
+          background: "var(--accent-glow)",
+          fontSize: "0.8rem",
+          color: "var(--accent)",
+          letterSpacing: "0.04em",
+          marginBottom: "1.75rem",
+        }}
+      >
+        <HeadphonesIcon />
+        Headphones recommended for best results
+      </div>
 
       <div
         className="fade-up fade-up-delay-3"
@@ -47,7 +69,7 @@ export function CalibrationIntro({ onBegin, loading }: Props) {
           marginBottom: "2.5rem",
         }}
       >
-        {["5 pairs", "~3 minutes", "Headphones recommended"].map((tag) => (
+        {["5 pairs", "~3 minutes"].map((tag) => (
           <span
             key={tag}
             style={{
@@ -96,6 +118,21 @@ export function CalibrationIntro({ onBegin, loading }: Props) {
         </button>
       </div>
     </div>
+  );
+}
+
+function HeadphonesIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path
+        d="M2 9V8a6 6 0 0112 0v1"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+      <rect x="1" y="9" width="3" height="4" rx="1.5" fill="currentColor" />
+      <rect x="12" y="9" width="3" height="4" rx="1.5" fill="currentColor" />
+    </svg>
   );
 }
 

@@ -51,20 +51,20 @@ export function FocusMode() {
     const audio = new Audio();
     audio.loop = true;
     audio.volume = volume;
-    audio.preload = "auto";
+    // audio.preload = "auto";
+    audio.src = loopUrl;
 
     // Log load errors so we can debug
     audio.addEventListener("error", (e) => {
       const err = (e.target as HTMLAudioElement).error;
-      const msg = err
-        ? `Audio error ${err.code}: ${err.message}`
-        : "Unknown audio error";
-      console.error("[FocusMode] audio error:", msg, "URL:", loopUrl);
+      // ✅ Ignore error code 4 (empty src) — src is valid, ignore transient errors
+      if (!err || err.code === 4) return;
+      const msg = `Audio error ${err.code}: ${err.message}`;
+      console.error("[FocusMode] audio error:", msg);
       setAudioError(`Could not load audio. ${msg}`);
       setIsPlaying(false);
     });
 
-    audio.src = loopUrl;
     audioRef.current = audio;
 
     audio
@@ -74,11 +74,12 @@ export function FocusMode() {
         setIsPlaying(true);
       })
       .catch((err) => {
-        console.error("[FocusMode] play() rejected:", err, "URL:", loopUrl);
+        // Ignore interrupted play requests — happens on mount, audio still plays
+        if (err.name === "AbortError") return;
+        console.error("[FocusMode] play() rejected:", err);
         setAudioError(`Playback blocked: ${err.message}. Click play to start.`);
         setIsPlaying(false);
       });
-
     startTimeRef.current = Date.now();
 
     timerRef.current = setInterval(() => {

@@ -1,7 +1,7 @@
 // Onboarding Scoring Engine (30-Question Version)
 // Sections A–D (Q1–20): DSM-5 scoring — unchanged
 // Section E (Q21–30): Nuree personalisation — validated separately, not scored
-
+// onboarding-scoring.ts
 // ============================================
 // INTERFACES
 // ============================================

@@ -10,7 +10,6 @@ export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
 
-    // Get authenticated user
     const {
       data: { user },
       error: authError,
@@ -19,11 +18,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Parse request body
     const body = await request.json();
     const { responses, results } = body;
 
-    // Validate responses
     if (!responses || !Array.isArray(responses)) {
       return NextResponse.json(
         { error: "Invalid responses format" },
@@ -31,7 +28,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate all 30 questions are answered
     if (!validateResponses(responses)) {
       return NextResponse.json(
         { error: "Please answer all questions" },
@@ -39,59 +35,68 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Calculate results if not provided
     const scoringResult =
       results || scoreAssessment(responses as OnboardingResponse[]);
 
-    // Delete old responses first
+    // Delete old responses — return on failure to avoid unique constraint violation on insert
     const { error: deleteError } = await supabase
       .from("onboarding_responses")
       .delete()
       .eq("user_id", user.id);
 
     if (deleteError) {
-      console.error("Error deleting old responses:", deleteError);
-    }
-
-    // Save individual responses — only Q1–20 (DSM-5 scoring questions)
-    // Q21–30 are personalisation and saved separately to user profile
-    const scoringResponses = responses.filter(
-      (r: OnboardingResponse) => r.questionNumber <= 20,
-    );
-
-    const responseRecords = scoringResponses.map((r: OnboardingResponse) => ({
-      user_id: user.id,
-      question_number: r.questionNumber,
-      response:
-        typeof r.response === "object"
-          ? JSON.stringify(r.response)
-          : String(r.response),
-    }));
-
-    const { error: responseError } = await supabase
-      .from("onboarding_responses")
-      .insert(responseRecords);
-
-    if (responseError) {
       console.error(
-        "Error saving responses:",
-        JSON.stringify(responseError, null, 2),
+        "Error deleting old responses:",
+        JSON.stringify(deleteError, null, 2),
       );
       return NextResponse.json(
         {
-          error: "Failed to save responses",
-          detail: responseError.message,
-          code: responseError.code,
+          error: "Failed to clear previous responses",
+          detail: deleteError.message,
         },
         { status: 500 },
       );
     }
 
-    // Build personalisation profile from Q21–30
-    const personalisationResponses = responses.filter(
-      (r: OnboardingResponse) => r.questionNumber >= 21,
+    // Only save Q1–20 (DSM-5 scoring questions) to onboarding_responses
+    const scoringResponses = (responses as OnboardingResponse[]).filter(
+      (r) => r.questionNumber >= 1 && r.questionNumber <= 20,
     );
-    const personalisationProfile: Record<string, any> = {};
+
+    if (scoringResponses.length > 0) {
+      const responseRecords = scoringResponses.map((r) => ({
+        user_id: user.id,
+        question_number: r.questionNumber,
+        response:
+          typeof r.response === "object"
+            ? JSON.stringify(r.response)
+            : String(r.response),
+      }));
+
+      const { error: responseError } = await supabase
+        .from("onboarding_responses")
+        .insert(responseRecords);
+
+      if (responseError) {
+        console.error(
+          "Error saving responses:",
+          JSON.stringify(responseError, null, 2),
+        );
+        return NextResponse.json(
+          {
+            error: "Failed to save responses",
+            detail: responseError.message,
+            code: responseError.code,
+          },
+          { status: 500 },
+        );
+      }
+    }
+
+    // Build personalisation profile from Q21–30
+    const personalisationResponses = (responses as OnboardingResponse[]).filter(
+      (r) => r.questionNumber >= 21,
+    );
     const personalisationKeyMap: Record<number, string> = {
       21: "task_type",
       22: "peak_focus_time",
@@ -104,12 +109,12 @@ export async function POST(request: NextRequest) {
       29: "work_environment",
       30: "sensory_focus_preference",
     };
-    personalisationResponses.forEach((r: OnboardingResponse) => {
+    const personalisationProfile: Record<string, any> = {};
+    personalisationResponses.forEach((r) => {
       const key = personalisationKeyMap[r.questionNumber];
       if (key) personalisationProfile[key] = r.response;
     });
 
-    // Save or update results
     const { error: resultsError } = await supabase
       .from("onboarding_results")
       .upsert(
@@ -127,9 +132,7 @@ export async function POST(request: NextRequest) {
           assessment_version: 2,
           completed_at: new Date().toISOString(),
         },
-        {
-          onConflict: "user_id",
-        },
+        { onConflict: "user_id" },
       );
 
     if (resultsError) {
@@ -147,7 +150,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Update user profile — include personalisation data
     const { error: profileError } = await supabase
       .from("users")
       .update({
@@ -166,10 +168,9 @@ export async function POST(request: NextRequest) {
         "Error updating profile:",
         JSON.stringify(profileError, null, 2),
       );
-      // Don't fail the request if profile update fails
+      // Non-fatal — don't block the response
     }
 
-    // Track completion event
     const startTime = request.headers.get("X-Start-Time");
     await supabase.from("events").insert({
       user_id: user.id,
@@ -185,7 +186,6 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Return results for display
     return NextResponse.json({
       success: true,
       results: scoringResult,

@@ -21,6 +21,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Ensure user row exists in public.users before FK-constrained inserts
+    // Ensure user row exists in public.users before FK-constrained inserts
+    const { error: upsertError } = await supabase.from("users").upsert(
+      {
+        id: user.id,
+        email: user.email, // <-- add this
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "id", ignoreDuplicates: true },
+    );
+
+    if (upsertError) {
+      console.error("Error ensuring user exists:", upsertError);
+      return NextResponse.json(
+        { error: "Failed to initialize user" },
+        { status: 500 },
+      );
+    }
+
     const body: SaveProgressRequest = await request.json();
     const { responses } = body;
 

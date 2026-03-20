@@ -1,33 +1,25 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { AssessmentQuestionComponent } from '@/components/assessments/assessment-question'
+import { SafetyInterstitialModal } from '@/components/assessments/safety-interstitial-modal'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Progress } from '@/components/ui/progress'
-import { AssessmentQuestionComponent } from '@/components/assessments/assessment-question'
-import { AssessmentResults } from '@/components/assessments/assessment-results'
-import { SafetyInterstitialModal } from '@/components/assessments/safety-interstitial-modal'
-import { useAssessmentStore } from '@/store/assessment-store'
+import { ArrowLeft, AlertCircle, Clock, Save, CheckCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { AssessmentService } from '@/lib/services/assessment-service'
-import { ASSESSMENT_CONFIG, isValidAssessmentType } from '@/lib/types/assessment'
-import { 
-  ArrowLeft, 
-  AlertCircle, 
-  Clock,
-  Save,
-  CheckCircle
-} from 'lucide-react'
+import { useAssessmentStore } from '@/store/assessment-store'
+import { isValidAssessmentType, ASSESSMENT_CONFIG } from '@/lib/types/assessment'
+import type { AssessmentType } from '@/lib/types/assessment'
 
 export default function AssessmentFlowPage() {
   const router = useRouter()
   const params = useParams()
   const supabase = createClient()
   const assessmentService = new AssessmentService()
-  
+
   const {
     currentAssessment,
     answerQuestion,
@@ -37,86 +29,76 @@ export default function AssessmentFlowPage() {
     completeAssessment,
     clearCurrentAssessment
   } = useAssessmentStore()
-  
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [result, setResult] = useState<any>(null)
-  const [showResult, setShowResult] = useState(false)
-  const [user, setUser] = useState<any>(null)
-  const [autoSaveTimer, setAutoSaveTimer] = useState<NodeJS.Timeout | null>(null)
-  const [showSafetyInterstitial, setShowSafetyInterstitial] = useState(false)
-  const [pendingNextQuestion, setPendingNextQuestion] = useState(false)
 
-  const assessmentType = params.type as string
+  const [loading, setLoading] = useState(true)
+  const [completing, setCompleting] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [showSafetyInterstitial, setShowSafetyInterstitial] = useState(false)
+  const [safetyHandled, setSafetyHandled] = useState(false)
+  const autoSaveRef = useRef<NodeJS.Timeout | null>(null)
+
+  const assessmentType = params?.type as string
 
   useEffect(() => {
     if (!isValidAssessmentType(assessmentType)) {
-      router.push('/profile?tab=assessments')
+      router.replace('/profile?tab=assessments')
       return
     }
-
     initializeAssessment()
   }, [assessmentType])
 
-  // Auto-save progress
-  useEffect(() => {
-    if (currentAssessment && !currentAssessment.isComplete) {
-      // Clear existing timer
-      if (autoSaveTimer) {
-        clearTimeout(autoSaveTimer)
-      }
-
-      // Set new timer for auto-save after 5 seconds of inactivity
-      const timer = setTimeout(async () => {
-        setSaving(true)
-        await saveProgress()
-        setSaving(false)
-      }, 5000)
-
-      setAutoSaveTimer(timer)
-    }
-
-    return () => {
-      if (autoSaveTimer) {
-        clearTimeout(autoSaveTimer)
-      }
-    }
-  }, [currentAssessment?.responses])
-
   const initializeAssessment = async () => {
     setLoading(true)
+    setError(null)
 
-    // Get user
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      router.push('/login')
+    if (!user) { router.replace('/login'); return }
+
+    if (
+      currentAssessment &&
+      currentAssessment.assessment.type === assessmentType &&
+      !currentAssessment.isComplete
+    ) { setLoading(false); return }
+
+    const assessment = await assessmentService.getAssessment(assessmentType as AssessmentType)
+    if (!assessment) {
+      setError('Assessment not found. Please go back and try again.')
+      setLoading(false)
       return
     }
-    setUser(user)
 
-    // If no current assessment, load it
-    if (!currentAssessment || currentAssessment.assessment.type !== assessmentType) {
-      const assessment = await assessmentService.getAssessment(assessmentType as any)
-      if (!assessment) {
-        router.push('/profile?tab=assessments')
-        return
-      }
+    const progress = await assessmentService.getOrCreateProgress(user.id, assessment.id)
 
-      // Check for existing progress
-      const progress = await assessmentService.getOrCreateProgress(user.id, assessment.id)
-      if (progress && Object.keys(progress.responses).length > 0) {
-        // Resume from saved progress
-        useAssessmentStore.setState({
-          currentAssessment: {
-            assessment,
-            currentQuestionIndex: progress.current_question_index,
-            responses: progress.responses as Record<number, number>,
-            startTime: new Date(progress.started_at).getTime(),
-            isComplete: false
-          }
-        })
-      } else {
-        // Start new assessment
+    if (progress && progress.responses && Object.keys(progress.responses).length > 0) {
+      useAssessmentStore.setState({
+        currentAssessment: {
+          assessment,
+          currentQuestionIndex: progress.current_question_index,
+          responses: progress.responses as Record<number, number>,
+          startTime: new Date(progress.started_at).getTime(),
+          isComplete: false
+        }
+      })
+    } else {
+      try {
+        const key = `assessment-progress:${user.id}:${assessmentType}`
+        const saved = localStorage.getItem(key)
+        if (saved) {
+          const p = JSON.parse(saved)
+          useAssessmentStore.setState({
+            currentAssessment: {
+              assessment,
+              currentQuestionIndex: p.index ?? 0,
+              responses: p.responses ?? {},
+              startTime: p.startTime ?? Date.now(),
+              isComplete: false
+            }
+          })
+        } else {
+          useAssessmentStore.getState().startAssessment(assessment)
+        }
+      } catch {
         useAssessmentStore.getState().startAssessment(assessment)
       }
     }
@@ -124,257 +106,169 @@ export default function AssessmentFlowPage() {
     setLoading(false)
   }
 
-  const handleAnswer = (value: number) => {
-    if (!currentAssessment) return
-
-    const currentQuestion = currentAssessment.assessment.questions[currentAssessment.currentQuestionIndex]
-    answerQuestion(currentQuestion.id, value)
-
-    // Check for PHQ-9 Question 9 (self-harm ideation) with answer > 0
-    if (
-      currentAssessment.assessment.type === 'phq9' &&
-      currentQuestion.id === 9 &&
-      value > 0
-    ) {
-      // Show safety interstitial
-      setShowSafetyInterstitial(true)
-      setPendingNextQuestion(true)
-
-      // Log safety event
-      logSafetyEvent()
-    }
-  }
-
-  const logSafetyEvent = async () => {
-    if (!user) return
-
-    try {
-      // Log a non-diagnostic safety interstitial event
-      await supabase.from('events').insert({
-        user_id: user.id,
-        type: 'assessment_safety_interstitial',
-        data: {
-          assessment_type: 'phq9',
-          question_id: 9,
-          timestamp: new Date().toISOString()
-        }
-      })
-    } catch (error) {
-      console.error('Failed to log safety event:', error)
-    }
-  }
-
-  const handleNext = async () => {
-    if (!currentAssessment) return
-
-    // If safety interstitial is pending, don't proceed yet
-    if (pendingNextQuestion) {
-      return
-    }
-
-    if (currentAssessment.isComplete) {
-      // Complete the assessment
-      setLoading(true)
-      const response = await completeAssessment()
-      if (response) {
-        const assessmentResult = await assessmentService.getAssessmentResult(
-          currentAssessment.assessment,
-          response
-        )
-        setResult(assessmentResult)
-        setShowResult(true)
-      }
-      setLoading(false)
-    } else {
-      nextQuestion()
-    }
-  }
-
-  const handleSafetyInterstitialContinue = () => {
-    setShowSafetyInterstitial(false)
-    setPendingNextQuestion(false)
-    // Proceed to next question after user acknowledges
-    if (currentAssessment && !currentAssessment.isComplete) {
-      nextQuestion()
-    }
-  }
-
-  const handleSafetyInterstitialStop = async () => {
-    // Save progress before exiting
-    if (currentAssessment && !currentAssessment.isComplete) {
+  // Auto-save every 5s
+  useEffect(() => {
+    if (!currentAssessment || currentAssessment.isComplete) return
+    if (autoSaveRef.current) clearTimeout(autoSaveRef.current)
+    autoSaveRef.current = setTimeout(async () => {
       setSaving(true)
       await saveProgress()
       setSaving(false)
+    }, 5000)
+    return () => { if (autoSaveRef.current) clearTimeout(autoSaveRef.current) }
+  }, [currentAssessment?.responses])
+
+  const handleAnswer = useCallback((value: number) => {
+    if (!currentAssessment) return
+    const question = currentAssessment.assessment.questions[currentAssessment.currentQuestionIndex]
+    answerQuestion(question.id, value)
+    // PHQ-9 Q9 safety gate
+    if (currentAssessment.assessment.type === 'phq9' && question.id === 9 && value > 0 && !safetyHandled) {
+      setShowSafetyInterstitial(true)
     }
+  }, [currentAssessment, answerQuestion, safetyHandled])
 
-    setShowSafetyInterstitial(false)
-    setPendingNextQuestion(false)
-    clearCurrentAssessment()
+  const handleNext = useCallback(async () => {
+    if (!currentAssessment || showSafetyInterstitial) return
+    if (currentAssessment.isComplete) { await handleComplete(); return }
+    nextQuestion()
+  }, [currentAssessment, showSafetyInterstitial, nextQuestion])
 
-    // Navigate back to assessments page with crisis modal open
-    // We'll pass a query parameter to trigger the crisis modal
-    router.push('/assessments?showCrisis=true')
+  const handleComplete = async () => {
+    if (!currentAssessment) return
+    setCompleting(true)
+    try {
+      const response = await completeAssessment()
+      if (response) {
+        router.push(`/assessments/results/${response.id}`)
+      } else {
+        setError('Failed to save your results. Please try again.')
+      }
+    } catch (err) {
+      setError('An unexpected error occurred. Please try again.')
+    } finally {
+      setCompleting(false)
+    }
   }
 
-  const handlePrevious = () => {
-    previousQuestion()
-  }
+  const handlePrevious = useCallback(() => previousQuestion(), [previousQuestion])
 
   const handleExit = async () => {
     if (currentAssessment && !currentAssessment.isComplete) {
-      // Save progress before exiting
-      setSaving(true)
-      await saveProgress()
-      setSaving(false)
+      setSaving(true); await saveProgress(); setSaving(false)
     }
     clearCurrentAssessment()
     router.push('/profile?tab=assessments')
   }
 
-  const handleRetake = () => {
-    if (currentAssessment) {
-      useAssessmentStore.getState().startAssessment(currentAssessment.assessment)
-      setShowResult(false)
-      setResult(null)
-    }
+  const handleSafetyContinue = () => {
+    setSafetyHandled(true)
+    setShowSafetyInterstitial(false)
+    if (currentAssessment && !currentAssessment.isComplete) nextQuestion()
   }
 
-  const handleViewHistory = () => {
-    router.push('/assessments?tab=history')
+  const handleSafetyStop = async () => {
+    setSafetyHandled(true)
+    setShowSafetyInterstitial(false)
+    if (currentAssessment) { setSaving(true); await saveProgress(); setSaving(false) }
+    clearCurrentAssessment()
+    router.push('/profile?tab=assessments&showCrisis=true')
   }
 
   if (loading) {
     return (
-      <div className="container mx-auto px-4 py-8 max-w-4xl">
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading assessment...</p>
-          </div>
+      <div className="container mx-auto px-4 py-16 max-w-3xl flex items-center justify-center min-h-[60vh]">
+        <div className="text-center space-y-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-violet-600 mx-auto" />
+          <p className="text-gray-600">Loading assessment…</p>
         </div>
       </div>
     )
   }
 
-  if (!currentAssessment) {
+  if (error) {
     return (
-      <div className="container mx-auto px-4 py-8 max-w-4xl">
+      <div className="container mx-auto px-4 py-8 max-w-3xl space-y-4">
         <Alert className="border-red-200 bg-red-50">
           <AlertCircle className="h-4 w-4 text-red-600" />
-          <AlertDescription className="text-red-800">
-            Unable to load assessment. Please try again.
-          </AlertDescription>
+          <AlertDescription className="text-red-800">{error}</AlertDescription>
         </Alert>
-        <Button onClick={() => router.push('/profile?tab=assessments')} className="mt-4">
-          Back to Assessments
+        <Button variant="outline" onClick={() => router.push('/profile?tab=assessments')} className="flex items-center gap-2">
+          <ArrowLeft className="h-4 w-4" /> Back to Assessments
         </Button>
       </div>
     )
   }
 
-  if (showResult && result) {
-    return (
-      <div className="container mx-auto px-4 py-8">
-        <AssessmentResults 
-          result={result}
-          onRetake={handleRetake}
-          onViewHistory={handleViewHistory}
-        />
-      </div>
-    )
-  }
+  if (!currentAssessment) return null
 
   const config = ASSESSMENT_CONFIG[currentAssessment.assessment.type]
   const currentQuestion = currentAssessment.assessment.questions[currentAssessment.currentQuestionIndex]
   const selectedValue = currentAssessment.responses[currentQuestion.id]
+  const isLast = currentAssessment.currentQuestionIndex === currentAssessment.assessment.questions.length - 1
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-4xl">
-      {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="mb-8"
-      >
+    <div className="container mx-auto px-4 py-8 max-w-3xl">
+      <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
         <div className="flex items-center justify-between mb-4">
-          <Button
-            variant="ghost"
-            onClick={handleExit}
-            className="flex items-center gap-2"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Exit Assessment
+          <Button variant="ghost" onClick={handleExit} className="flex items-center gap-2 text-gray-600">
+            <ArrowLeft className="h-4 w-4" /> Exit
           </Button>
-          
-          <div className="flex items-center gap-4 text-sm text-gray-600">
+          <div className="flex items-center gap-4 text-sm text-gray-500">
             {saving && (
-              <span className="flex items-center gap-1 text-green-600">
-                <Save className="h-4 w-4 animate-pulse" />
-                Saving...
+              <span className="flex items-center gap-1 text-violet-600">
+                <Save className="h-3.5 w-3.5 animate-pulse" /> Saving…
               </span>
             )}
             <span className="flex items-center gap-1">
-              <Clock className="h-4 w-4" />
-              ~{currentAssessment.assessment.time_estimate} min
+              <Clock className="h-3.5 w-3.5" /> ~{currentAssessment.assessment.time_estimate} min
             </span>
           </div>
         </div>
-
-        <div className="text-center mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">
-            {config.displayName}
-          </h1>
-          <p className="text-gray-600">
-            {currentAssessment.assessment.description}
-          </p>
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-gray-900 mb-1">{config.displayName}</h1>
+          <p className="text-sm text-gray-500">{currentAssessment.assessment.description}</p>
         </div>
       </motion.div>
 
-      {/* Question */}
       <AnimatePresence mode="wait">
         <AssessmentQuestionComponent
           key={currentQuestion.id}
           question={currentQuestion}
+          assessmentType={currentAssessment.assessment.type}
           questionNumber={currentAssessment.currentQuestionIndex + 1}
           totalQuestions={currentAssessment.assessment.questions.length}
           selectedValue={selectedValue}
           onAnswer={handleAnswer}
           onNext={handleNext}
           onPrevious={handlePrevious}
-          canGoNext={selectedValue !== undefined}
+          canGoNext={selectedValue !== undefined && !completing}
           canGoPrevious={currentAssessment.currentQuestionIndex > 0}
-          isLastQuestion={currentAssessment.currentQuestionIndex === currentAssessment.assessment.questions.length - 1}
+          isLastQuestion={isLast}
         />
       </AnimatePresence>
 
-      {/* Completion Message */}
-      {currentAssessment.isComplete && (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="mt-8"
-        >
-          <Alert className="border-green-200 bg-green-50">
-            <CheckCircle className="h-4 w-4 text-green-600" />
-            <AlertDescription className="text-green-800">
-              Great job! You&apos;ve answered all questions. Click &quot;Complete&quot; to see your results.
-            </AlertDescription>
-          </Alert>
-        </motion.div>
-      )}
+      <AnimatePresence>
+        {currentAssessment.isComplete && (
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mt-6">
+            <Alert className="border-green-200 bg-green-50">
+              <CheckCircle className="h-4 w-4 text-green-600" />
+              <AlertDescription className="text-green-800">
+                {completing ? 'Saving your results…' : 'All questions answered — click "Complete" to see your results.'}
+              </AlertDescription>
+            </Alert>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* Help Text */}
-      <div className="mt-8 text-center">
-        <p className="text-sm text-gray-500">
-          Your progress is saved automatically. You can exit and resume this assessment later.
-        </p>
-      </div>
+      <p className="mt-6 text-center text-xs text-gray-400">
+        Your progress is saved automatically. You can exit and resume later.
+      </p>
 
-      {/* Safety Interstitial Modal */}
       <SafetyInterstitialModal
         open={showSafetyInterstitial}
-        onContinue={handleSafetyInterstitialContinue}
-        onStop={handleSafetyInterstitialStop}
+        onContinue={handleSafetyContinue}
+        onStop={handleSafetyStop}
       />
     </div>
   )

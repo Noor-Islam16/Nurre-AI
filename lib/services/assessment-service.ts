@@ -1,20 +1,77 @@
 import { createClient } from '@/lib/supabase/client'
-import type { 
-  Assessment, 
-  AssessmentResponse, 
-  AssessmentProgress, 
+import type {
+  Assessment,
+  AssessmentResponse,
+  AssessmentProgress,
   AssessmentType,
-  ScoreCalculationResult,
   InterpretationRange,
   AssessmentStats,
   AssessmentResult
 } from '@/lib/types/assessment'
 
+// ─── ASRS Screening Threshold Logic ──────────────────────────────────────────
+// Per the official ASRS-v1.1 spec (Kessler et al. 2005):
+//   Part A Q1–Q3: positive if response >= 2 (Sometimes / Often / Very Often)
+//   Part A Q4–Q6: positive if response >= 3 (Often / Very Often)
+//   Screen is POSITIVE if 4+ of the 6 Part A items are positive
+// We do NOT use a simple sum for ASRS — only Part A (Q1–Q6) matters.
+function scoreASRS(responses: Record<number, number>): {
+  total: number
+  sections: Record<string, number>
+  isPositive: boolean
+} {
+  let positiveCount = 0
+
+  // Q1–Q3: threshold at "Sometimes" (value 2)
+  for (let q = 1; q <= 3; q++) {
+    if ((responses[q] ?? -1) >= 2) positiveCount++
+  }
+  // Q4–Q6: threshold at "Often" (value 3)
+  for (let q = 4; q <= 6; q++) {
+    if ((responses[q] ?? -1) >= 3) positiveCount++
+  }
+
+  const isPositive = positiveCount >= 4
+
+  // Synthetic total: map to the interpretation ranges defined in the DB
+  // Range "low"      → min:0,  max:13
+  // Range "moderate" → min:14, max:24
+  // We pick 0 (negative) or 14 (positive) so the range lookup always hits correctly.
+  const total = isPositive ? 14 : 0
+
+  // Part-A section score (raw sum of Q1–Q6, kept for reference)
+  const partASum = [1, 2, 3, 4, 5, 6].reduce((s, q) => s + (responses[q] ?? 0), 0)
+
+  return { total, sections: { A: partASum }, isPositive }
+}
+
+// ─── DASS-21 Subscale Scoring ─────────────────────────────────────────────────
+// Per Lovibond & Lovibond (1995):
+//   domain_score = sum(domain_questions) × 2
+// Subscale thresholds are then applied to these multiplied values.
+function scoreDASS21(
+  assessment: Assessment,
+  responses: Record<number, number>
+): { total: number; subscales: Record<string, number> } {
+  const subscales: Record<string, number> = {}
+  let total = 0
+
+  if (assessment.scoring_rules.subscales) {
+    for (const [name, sub] of Object.entries(assessment.scoring_rules.subscales)) {
+      const rawSum = sub.questions.reduce((s, qId) => s + (responses[qId] ?? 0), 0)
+      const scaledScore = rawSum * 2          // DASS-21 multiplier
+      subscales[name] = scaledScore
+      total += scaledScore
+    }
+  }
+
+  return { total, subscales }
+}
+
 export class AssessmentService {
   private supabase = createClient()
 
-  // Fetch all available assessments via API route (server-side auth is
-  // always reliable — avoids RLS timing issues during client-side navigation)
+  // Fetch all available assessments via API route
   async getAssessments(): Promise<Assessment[]> {
     try {
       const res = await fetch('/api/assessments')
@@ -88,7 +145,7 @@ export class AssessmentService {
       .limit(1)
       .single()
 
-    if (error && error.code !== 'PGRST116') { // Not found is ok
+    if (error && error.code !== 'PGRST116') {
       console.error('Error fetching last assessment:', error)
     }
 
@@ -102,19 +159,19 @@ export class AssessmentService {
     retakeIntervalDays: number
   ): Promise<{ canRetake: boolean; daysRemaining?: number }> {
     const lastAssessment = await this.getLastAssessment(userId, type)
-    
+
     if (!lastAssessment) {
       return { canRetake: true }
     }
 
     const daysSinceLastAssessment = Math.floor(
-      (Date.now() - new Date(lastAssessment.completed_at).getTime()) / 
+      (Date.now() - new Date(lastAssessment.completed_at).getTime()) /
       (1000 * 60 * 60 * 24)
     )
 
     const canRetake = daysSinceLastAssessment >= retakeIntervalDays
-    const daysRemaining = canRetake 
-      ? undefined 
+    const daysRemaining = canRetake
+      ? undefined
       : retakeIntervalDays - daysSinceLastAssessment
 
     return { canRetake, daysRemaining }
@@ -125,7 +182,6 @@ export class AssessmentService {
     userId: string,
     assessmentId: string
   ): Promise<AssessmentProgress | null> {
-    // First try to get existing progress
     let { data, error } = await this.supabase
       .from('assessment_progress')
       .select('*')
@@ -133,7 +189,7 @@ export class AssessmentService {
       .eq('assessment_id', assessmentId)
       .single()
 
-    if (error && error.code === 'PGRST116') { // Not found, create new
+    if (error && error.code === 'PGRST116') {
       const { data: newProgress, error: createError } = await this.supabase
         .from('assessment_progress')
         .insert({
@@ -171,15 +227,16 @@ export class AssessmentService {
   ): Promise<boolean> {
     const { error } = await this.supabase
       .from('assessment_progress')
-      .upsert({
-        user_id: userId,
-        assessment_id: assessmentId,
-        current_question_index: questionIndex,
-        responses,
-        last_updated: new Date().toISOString()
-      }, {
-        onConflict: 'user_id,assessment_id'
-      })
+      .upsert(
+        {
+          user_id: userId,
+          assessment_id: assessmentId,
+          current_question_index: questionIndex,
+          responses,
+          last_updated: new Date().toISOString()
+        },
+        { onConflict: 'user_id,assessment_id' }
+      )
 
     if (error) {
       console.error('Error saving assessment progress:', error)
@@ -189,25 +246,17 @@ export class AssessmentService {
     return true
   }
 
-  // Complete assessment and save response
+  // ─── Complete assessment and save response ──────────────────────────────────
   async completeAssessment(
     userId: string,
     assessment: Assessment,
     responses: Record<number, number>,
     startTime: number
   ): Promise<AssessmentResponse | null> {
-    // Calculate scores
     const scores = this.calculateScores(assessment, responses)
-    
-    // Get interpretation
-    const interpretation = this.getInterpretation(
-      assessment,
-      scores.total || 0
-    )
-
+    const interpretation = this.getInterpretation(assessment, scores)
     const timeTaken = Math.floor((Date.now() - startTime) / 1000)
 
-    // Save response
     const { data, error } = await this.supabase
       .from('assessment_responses')
       .insert({
@@ -215,7 +264,7 @@ export class AssessmentService {
         assessment_id: assessment.id,
         assessment_type: assessment.type,
         responses,
-        scores: scores,
+        scores,
         severity_level: interpretation.level,
         time_taken: timeTaken,
         started_at: new Date(startTime).toISOString(),
@@ -230,9 +279,7 @@ export class AssessmentService {
       return null
     }
 
-    // Clear progress
     await this.clearProgress(userId, assessment.id)
-
     return data
   }
 
@@ -245,78 +292,104 @@ export class AssessmentService {
       .eq('assessment_id', assessmentId)
   }
 
-  // Calculate assessment scores
+  // ─── Score Calculation ───────────────────────────────────────────────────────
+  // Dispatches to type-specific logic where needed.
   calculateScores(
     assessment: Assessment,
     responses: Record<number, number>
   ): AssessmentResponse['scores'] {
-    const { scoring_rules } = assessment
-    const scores: AssessmentResponse['scores'] = {}
-
-    // Calculate total score if needed
-    if (scoring_rules.total_score !== false) {
-      const total = Object.values(responses).reduce((sum, value) => sum + value, 0)
-      scores.total = total
+    // ASRS: threshold-based Part A scoring
+    if (assessment.type === 'asrs') {
+      const { total, sections } = scoreASRS(responses)
+      return { total, sections }
     }
 
-    // Calculate section scores
-    if (scoring_rules.sections) {
+    // DASS-21: subscale sum × 2
+    if (assessment.type === 'dass21') {
+      const { total, subscales } = scoreDASS21(assessment, responses)
+      return { total, subscales }
+    }
+
+    // PHQ-9 and GAD-7: simple sum of all responses
+    const total = Object.values(responses).reduce((sum, v) => sum + v, 0)
+    const scores: AssessmentResponse['scores'] = { total }
+
+    // Handle any section scoring if defined (future-proof)
+    if (assessment.scoring_rules.sections) {
       scores.sections = {}
-      for (const [sectionName, section] of Object.entries(scoring_rules.sections)) {
-        const sectionScore = section.questions.reduce((sum, qId) => {
-          return sum + (responses[qId] || 0)
-        }, 0)
-        scores.sections[sectionName] = sectionScore
-      }
-    }
-
-    // Calculate subscale scores (for DASS-21)
-    if (scoring_rules.subscales) {
-      scores.subscales = {}
-      for (const [subscaleName, subscale] of Object.entries(scoring_rules.subscales)) {
-        const subscaleScore = subscale.questions.reduce((sum, qId) => {
-          return sum + (responses[qId] || 0)
-        }, 0)
-        scores.subscales[subscaleName] = subscaleScore
+      for (const [name, section] of Object.entries(assessment.scoring_rules.sections)) {
+        scores.sections[name] = section.questions.reduce(
+          (sum, qId) => sum + (responses[qId] ?? 0),
+          0
+        )
       }
     }
 
     return scores
   }
 
-  // Get interpretation for score
+  // ─── Interpretation Lookup ───────────────────────────────────────────────────
+  // Accepts the full scores object so subscale ranges can be resolved for DASS-21.
   getInterpretation(
     assessment: Assessment,
-    score: number
+    scores: AssessmentResponse['scores']
   ): InterpretationRange {
     const { ranges } = assessment.interpretation_guide
+    const total = scores.total ?? 0
 
     for (const range of ranges) {
-      if (score >= range.min && score <= range.max) {
+      if (total >= range.min && total <= range.max) {
         return range
       }
     }
 
-    // Default to first range if no match
+    // Fallback: return the first range
     return ranges[0]
   }
 
-  // Get assessment statistics for dashboard
+  // Resolve per-subscale interpretations for DASS-21
+  getSubscaleInterpretations(
+    assessment: Assessment,
+    subscaleScores: Record<string, number>
+  ): Record<string, InterpretationRange> {
+    const result: Record<string, InterpretationRange> = {}
+    const subscaleGuides = assessment.interpretation_guide.subscales
+
+    if (!subscaleGuides) return result
+
+    for (const [name, score] of Object.entries(subscaleScores)) {
+      const ranges = subscaleGuides[name]
+      if (!ranges) continue
+
+      for (const range of ranges) {
+        if (score >= range.min && score <= range.max) {
+          result[name] = range
+          break
+        }
+      }
+
+      // Fallback
+      if (!result[name] && ranges.length > 0) {
+        result[name] = ranges[0]
+      }
+    }
+
+    return result
+  }
+
+  // ─── Assessment Statistics ───────────────────────────────────────────────────
   async getAssessmentStats(
     userId: string,
     type: AssessmentType
   ): Promise<AssessmentStats | null> {
     const history = await this.getUserAssessmentHistory(userId, type)
-    
-    if (history.length === 0) {
-      return null
-    }
 
-    // Calculate statistics
-    const totalScores = history.map(h => h.scores.total || 0)
-    const averageScore = totalScores.reduce((a, b) => a + b, 0) / totalScores.length
+    if (history.length === 0) return null
 
-    // Determine trend (comparing last 3 assessments)
+    const totalScores = history.map(h => h.scores.total ?? 0)
+    const averageScore =
+      totalScores.reduce((a, b) => a + b, 0) / totalScores.length
+
     let trend: AssessmentStats['trend'] = 'stable'
     if (history.length >= 3) {
       const recentScores = totalScores.slice(0, 3)
@@ -325,12 +398,14 @@ export class AssessmentService {
       else if (scoreDiff > 2) trend = 'worsening'
     }
 
-    // Format scores over time (last 10 assessments)
-    const scoresOverTime = history.slice(0, 10).reverse().map(h => ({
-      date: h.completed_at,
-      score: h.scores.total || 0,
-      severity_level: h.severity_level
-    }))
+    const scoresOverTime = history
+      .slice(0, 10)
+      .reverse()
+      .map(h => ({
+        date: h.completed_at,
+        score: h.scores.total ?? 0,
+        severity_level: h.severity_level
+      }))
 
     return {
       assessment_type: type,
@@ -342,46 +417,35 @@ export class AssessmentService {
     }
   }
 
-  // Get complete assessment result with comparisons
+  // ─── Full Result with Comparison ─────────────────────────────────────────────
   async getAssessmentResult(
     assessment: Assessment,
     response: AssessmentResponse
   ): Promise<AssessmentResult> {
-    const interpretation = this.getInterpretation(
-      assessment,
-      response.scores.total || 0
-    )
+    const interpretation = this.getInterpretation(assessment, response.scores)
 
-    // Get subscale interpretations if available
+    // Subscale interpretations (DASS-21)
     let subscaleInterpretations: Record<string, InterpretationRange> | undefined
     if (response.scores.subscales && assessment.interpretation_guide.subscales) {
-      subscaleInterpretations = {}
-      for (const [subscale, score] of Object.entries(response.scores.subscales)) {
-        const ranges = assessment.interpretation_guide.subscales[subscale]
-        if (ranges) {
-          for (const range of ranges) {
-            if (score >= range.min && score <= range.max) {
-              subscaleInterpretations[subscale] = range
-              break
-            }
-          }
-        }
-      }
+      subscaleInterpretations = this.getSubscaleInterpretations(
+        assessment,
+        response.scores.subscales
+      )
     }
 
-    // Get previous assessment for comparison
+    // Previous assessment comparison
     const previousAssessments = await this.getUserAssessmentHistory(
       response.user_id,
       assessment.type
     )
-    
+
     let comparisonToPrevious: AssessmentResult['comparison_to_previous']
     if (previousAssessments.length > 1) {
-      const previous = previousAssessments[1] // Second item is the previous one
-      const scoreChange = (response.scores.total || 0) - (previous.scores.total || 0)
+      const previous = previousAssessments[1]
+      const scoreChange = (response.scores.total ?? 0) - (previous.scores.total ?? 0)
       const daysSinceLast = Math.floor(
-        (new Date(response.completed_at).getTime() - 
-         new Date(previous.completed_at).getTime()) / 
+        (new Date(response.completed_at).getTime() -
+          new Date(previous.completed_at).getTime()) /
         (1000 * 60 * 60 * 24)
       )
 
@@ -401,33 +465,26 @@ export class AssessmentService {
     }
   }
 
-  // Generate verification code for export
-  generateVerificationCode(responseId: string): string {
-    // Simple hash for verification (in production, use crypto)
-    const hash = responseId.split('').reduce((acc, char) => {
-      return acc + char.charCodeAt(0)
-    }, 0)
-    
-    return `NHS-${hash.toString(36).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`
-  }
-
-  // Check if any critical items were flagged
+  // Check if any critical items were flagged (e.g. PHQ-9 Q9)
   checkCriticalItems(
     assessment: Assessment,
     responses: Record<number, number>
   ): number[] {
-    const { scoring_rules } = assessment
     const flaggedItems: number[] = []
-
-    if (scoring_rules.critical_items) {
-      for (const itemId of scoring_rules.critical_items) {
-        // Flag if response is 2 or higher (on 0-3 scale)
-        if (responses[itemId] >= 2) {
+    if (assessment.scoring_rules.critical_items) {
+      for (const itemId of assessment.scoring_rules.critical_items) {
+        if ((responses[itemId] ?? 0) >= 2) {
           flaggedItems.push(itemId)
         }
       }
     }
-
     return flaggedItems
+  }
+
+  generateVerificationCode(responseId: string): string {
+    const hash = responseId
+      .split('')
+      .reduce((acc, char) => acc + char.charCodeAt(0), 0)
+    return `NHS-${hash.toString(36).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`
   }
 }

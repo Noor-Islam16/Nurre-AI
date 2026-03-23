@@ -1,19 +1,20 @@
-"use client"
+// assessment - mini - card.tsx;
+"use client";
 
-import { Card, CardContent } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Clock, HelpCircle, Calendar, PlayCircle } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import type { Assessment } from '@/lib/types/assessment'
-import { ASSESSMENT_CONFIG } from '@/lib/types/assessment'
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Clock, HelpCircle, Calendar, PlayCircle } from "lucide-react";
+import { cn } from "@/lib/utils";
+import type { Assessment } from "@/lib/types/assessment";
+import { ASSESSMENT_CONFIG } from "@/lib/types/assessment";
 
 interface AssessmentMiniCardProps {
-  assessment: Assessment
-  lastTaken?: Date
-  hasResume?: boolean
-  onStart: () => void
-  onDetails: () => void
+  assessment: Assessment;
+  lastTaken?: Date;
+  hasResume?: boolean;
+  onStart: () => void;
+  onDetails: () => void;
 }
 
 export function AssessmentMiniCard({
@@ -21,17 +22,17 @@ export function AssessmentMiniCard({
   lastTaken,
   hasResume = false,
   onStart,
-  onDetails
+  onDetails,
 }: AssessmentMiniCardProps) {
-  const config = ASSESSMENT_CONFIG[assessment.type]
+  const config = ASSESSMENT_CONFIG[assessment.type];
 
   const formatDate = (date: Date) => {
-    return new Date(date).toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric'
-    })
-  }
+    return new Date(date).toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  };
 
   return (
     <Card className="hover:shadow-md transition-shadow h-full flex flex-col">
@@ -56,11 +57,11 @@ export function AssessmentMiniCard({
             <Badge
               variant="secondary"
               className={cn(
-                'text-xs',
-                config.color === 'purple' && 'bg-purple-100 text-purple-700',
-                config.color === 'blue' && 'bg-blue-100 text-blue-700',
-                config.color === 'amber' && 'bg-amber-100 text-amber-700',
-                config.color === 'teal' && 'bg-teal-100 text-teal-700'
+                "text-xs",
+                config.color === "purple" && "bg-purple-100 text-purple-700",
+                config.color === "blue" && "bg-blue-100 text-blue-700",
+                config.color === "amber" && "bg-amber-100 text-amber-700",
+                config.color === "teal" && "bg-teal-100 text-teal-700",
               )}
             >
               {config.code}
@@ -89,11 +90,14 @@ export function AssessmentMiniCard({
           <div className="flex items-center gap-1">
             <Calendar className="h-3.5 w-3.5" />
             <span className="text-xs">
-              {lastTaken ? `Last: ${formatDate(lastTaken)}` : 'Last: —'}
+              {lastTaken ? `Last: ${formatDate(lastTaken)}` : "Last: —"}
             </span>
           </div>
           {hasResume && (
-            <Badge variant="outline" className="text-xs bg-violet-50 text-violet-700 border-violet-200">
+            <Badge
+              variant="outline"
+              className="text-xs bg-violet-50 text-violet-700 border-violet-200"
+            >
               <PlayCircle className="h-3 w-3 mr-1" />
               Resume
             </Badge>
@@ -119,11 +123,9 @@ export function AssessmentMiniCard({
               Details
             </Button>
           </div>
-          <span className="text-xs text-gray-500">
-            +3 pts
-          </span>
+          <span className="text-xs text-gray-500">+3 pts</span>
         </div>
       </CardContent>
     </Card>
-  )
+  );
 }

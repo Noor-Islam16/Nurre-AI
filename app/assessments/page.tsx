@@ -1,14 +1,15 @@
-'use client'
+// app / assessments / page.tsx;
+"use client";
 
-import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 export default function AssessmentsRedirect() {
-  const router = useRouter()
+  const router = useRouter();
 
   useEffect(() => {
-    router.replace('/profile?tab=assessments')
-  }, [router])
+    router.replace("/profile?tab=assessments");
+  }, [router]);
 
   return (
     <div className="min-h-screen flex items-center justify-center">
@@ -17,5 +18,5 @@ export default function AssessmentsRedirect() {
         <p className="mt-4 text-gray-600">Redirecting to My Profile...</p>
       </div>
     </div>
-  )
+  );
 }

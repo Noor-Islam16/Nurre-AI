@@ -1,7 +1,13 @@
-import { createClient } from '@/lib/supabase/server'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { StatsCard } from '@/components/admin/stats-card'
+import { createClient } from "@/lib/supabase/server";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { StatsCard } from "@/components/admin/stats-card";
 import {
   Table,
   TableBody,
@@ -9,7 +15,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table'
+} from "@/components/ui/table";
 import {
   Brain,
   TrendingUp,
@@ -17,57 +23,64 @@ import {
   Users,
   AlertCircle,
   CheckCircle,
-  FileText
-} from 'lucide-react'
-import { formatDistanceToNow } from 'date-fns'
+  FileText,
+} from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
 
 async function getAssessmentData() {
-  const supabase = await createClient()
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+  const supabase = await createClient();
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
   // Get assessment statistics
   const { data: assessmentResponses } = await supabase
-    .from('assessment_responses')
-    .select('*')
-    .gte('completed_at', thirtyDaysAgo.toISOString())
-    .order('completed_at', { ascending: false })
+    .from("assessment_responses")
+    .select("*")
+    .gte("completed_at", thirtyDaysAgo.toISOString())
+    .order("completed_at", { ascending: false });
 
   // Get assessment types
   const { data: assessmentTypes } = await supabase
-    .from('assessments')
-    .select('*')
-    .eq('is_active', true)
+    .from("assessments")
+    .select("*")
+    .eq("is_active", true);
 
   // Get onboarding assessment data
   const { data: onboardingResults } = await supabase
-    .from('onboarding_results')
-    .select('*, users!inner(email, name)')
-    .gte('completed_at', thirtyDaysAgo.toISOString())
-    .order('completed_at', { ascending: false })
-    .limit(20)
+    .from("onboarding_results")
+    .select("*, users!inner(email, name)")
+    .gte("completed_at", thirtyDaysAgo.toISOString())
+    .order("completed_at", { ascending: false })
+    .limit(20);
 
   // Calculate statistics
   const stats = {
     totalCompleted: assessmentResponses?.length || 0,
-    uniqueUsers: new Set(assessmentResponses?.map(r => r.user_id) || []).size,
+    uniqueUsers: new Set(assessmentResponses?.map((r) => r.user_id) || []).size,
     byType: {} as Record<string, number>,
     bySeverity: {} as Record<string, number>,
     avgCompletionTime: 0,
     completionRate: 0,
-  }
+  };
 
   // Count by type and severity
   assessmentResponses?.forEach((response) => {
-    stats.byType[response.assessment_type] = (stats.byType[response.assessment_type] || 0) + 1
+    stats.byType[response.assessment_type] =
+      (stats.byType[response.assessment_type] || 0) + 1;
     if (response.severity_level) {
-      stats.bySeverity[response.severity_level] = (stats.bySeverity[response.severity_level] || 0) + 1
+      stats.bySeverity[response.severity_level] =
+        (stats.bySeverity[response.severity_level] || 0) + 1;
     }
-  })
+  });
 
   // Calculate average completion time
-  const completionTimes = assessmentResponses?.filter(r => r.time_taken).map(r => r.time_taken!) || []
+  const completionTimes =
+    assessmentResponses
+      ?.filter((r) => r.time_taken)
+      .map((r) => r.time_taken!) || [];
   if (completionTimes.length > 0) {
-    stats.avgCompletionTime = Math.round(completionTimes.reduce((a, b) => a + b, 0) / completionTimes.length / 60) // Convert to minutes
+    stats.avgCompletionTime = Math.round(
+      completionTimes.reduce((a, b) => a + b, 0) / completionTimes.length / 60,
+    ); // Convert to minutes
   }
 
   // Onboarding assessment statistics
@@ -76,20 +89,22 @@ async function getAssessmentData() {
     byPresentation: {} as Record<string, number>,
     avgInattSeverity: 0,
     avgHyperSeverity: 0,
-  }
+  };
 
   onboardingResults?.forEach((result) => {
     onboardingStats.byPresentation[result.adhd_presentation] =
-      (onboardingStats.byPresentation[result.adhd_presentation] || 0) + 1
-  })
+      (onboardingStats.byPresentation[result.adhd_presentation] || 0) + 1;
+  });
 
   if (onboardingResults && onboardingResults.length > 0) {
     onboardingStats.avgInattSeverity = Math.round(
-      onboardingResults.reduce((sum, r) => sum + (r.inatt_severity || 0), 0) / onboardingResults.length
-    )
+      onboardingResults.reduce((sum, r) => sum + (r.inatt_severity || 0), 0) /
+        onboardingResults.length,
+    );
     onboardingStats.avgHyperSeverity = Math.round(
-      onboardingResults.reduce((sum, r) => sum + (r.hyper_severity || 0), 0) / onboardingResults.length
-    )
+      onboardingResults.reduce((sum, r) => sum + (r.hyper_severity || 0), 0) /
+        onboardingResults.length,
+    );
   }
 
   return {
@@ -98,32 +113,32 @@ async function getAssessmentData() {
     assessmentTypes: assessmentTypes || [],
     recentOnboarding: onboardingResults || [],
     recentAssessments: assessmentResponses?.slice(0, 10) || [],
-  }
+  };
 }
 
 export default async function AssessmentsPage() {
-  const data = await getAssessmentData()
+  const data = await getAssessmentData();
 
   const getSeverityColor = (severity: string | null) => {
-    if (!severity) return 'secondary'
+    if (!severity) return "secondary";
     switch (severity.toLowerCase()) {
-      case 'none':
-      case 'negative':
-        return 'secondary'
-      case 'mild':
-      case 'borderline':
-        return 'default'
-      case 'moderate':
-      case 'inattentive':
-      case 'hyperactive':
-        return 'default'
-      case 'severe':
-      case 'combined':
-        return 'destructive'
+      case "none":
+      case "negative":
+        return "secondary";
+      case "mild":
+      case "borderline":
+        return "default";
+      case "moderate":
+      case "inattentive":
+      case "hyperactive":
+        return "default";
+      case "severe":
+      case "combined":
+        return "destructive";
       default:
-        return 'secondary'
+        return "secondary";
     }
-  }
+  };
 
   return (
     <div className="space-y-6">
@@ -179,7 +194,9 @@ export default async function AssessmentsPage() {
             {data.assessmentTypes.map((assessment) => (
               <div key={assessment.id} className="p-4 border rounded-lg">
                 <div className="flex items-center justify-between mb-2">
-                  <Badge variant="outline">{assessment.type.toUpperCase()}</Badge>
+                  <Badge variant="outline">
+                    {assessment.type.toUpperCase()}
+                  </Badge>
                   {assessment.is_active ? (
                     <CheckCircle className="h-4 w-4 text-green-500" />
                   ) : (
@@ -219,31 +236,49 @@ export default async function AssessmentsPage() {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-            {Object.entries(data.onboardingStats.byPresentation).map(([presentation, count]) => (
-              <div key={presentation} className="text-center p-4 bg-muted rounded-lg">
-                <div className="text-2xl font-bold">{count}</div>
-                <div className="text-sm text-muted-foreground capitalize">{presentation}</div>
-                <Badge variant={getSeverityColor(presentation)} className="mt-2">
-                  {Math.round((count / data.onboardingStats.total) * 100)}%
-                </Badge>
-              </div>
-            ))}
+            {Object.entries(data.onboardingStats.byPresentation).map(
+              ([presentation, count]) => (
+                <div
+                  key={presentation}
+                  className="text-center p-4 bg-muted rounded-lg"
+                >
+                  <div className="text-2xl font-bold">{count}</div>
+                  <div className="text-sm text-muted-foreground capitalize">
+                    {presentation}
+                  </div>
+                  <Badge
+                    variant={getSeverityColor(presentation)}
+                    className="mt-2"
+                  >
+                    {Math.round((count / data.onboardingStats.total) * 100)}%
+                  </Badge>
+                </div>
+              ),
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="p-4 border rounded-lg">
               <div className="flex items-center gap-2 mb-2">
                 <TrendingUp className="h-4 w-4 text-blue-500" />
-                <span className="text-sm font-medium">Avg Inattention Severity</span>
+                <span className="text-sm font-medium">
+                  Avg Inattention Severity
+                </span>
               </div>
-              <div className="text-2xl font-bold">{data.onboardingStats.avgInattSeverity}%</div>
+              <div className="text-2xl font-bold">
+                {data.onboardingStats.avgInattSeverity}%
+              </div>
             </div>
             <div className="p-4 border rounded-lg">
               <div className="flex items-center gap-2 mb-2">
                 <TrendingUp className="h-4 w-4 text-purple-500" />
-                <span className="text-sm font-medium">Avg Hyperactivity Severity</span>
+                <span className="text-sm font-medium">
+                  Avg Hyperactivity Severity
+                </span>
               </div>
-              <div className="text-2xl font-bold">{data.onboardingStats.avgHyperSeverity}%</div>
+              <div className="text-2xl font-bold">
+                {data.onboardingStats.avgHyperSeverity}%
+              </div>
             </div>
           </div>
         </CardContent>
@@ -260,21 +295,30 @@ export default async function AssessmentsPage() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {['none', 'mild', 'moderate', 'severe'].map((severity) => {
-                const count = data.stats.bySeverity[severity] || 0
-                const percentage = data.stats.totalCompleted > 0
-                  ? Math.round((count / data.stats.totalCompleted) * 100)
-                  : 0
+              {["none", "mild", "moderate", "severe"].map((severity) => {
+                const count = data.stats.bySeverity[severity] || 0;
+                const percentage =
+                  data.stats.totalCompleted > 0
+                    ? Math.round((count / data.stats.totalCompleted) * 100)
+                    : 0;
 
                 return (
-                  <div key={severity} className="text-center p-4 bg-muted rounded-lg">
+                  <div
+                    key={severity}
+                    className="text-center p-4 bg-muted rounded-lg"
+                  >
                     <div className="text-2xl font-bold">{count}</div>
-                    <div className="text-sm text-muted-foreground capitalize">{severity}</div>
-                    <Badge variant={getSeverityColor(severity)} className="mt-2">
+                    <div className="text-sm text-muted-foreground capitalize">
+                      {severity}
+                    </div>
+                    <Badge
+                      variant={getSeverityColor(severity)}
+                      className="mt-2"
+                    >
                       {percentage}%
                     </Badge>
                   </div>
-                )
+                );
               })}
             </div>
           </CardContent>
@@ -315,7 +359,9 @@ export default async function AssessmentsPage() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={getSeverityColor(result.adhd_presentation)}>
+                      <Badge
+                        variant={getSeverityColor(result.adhd_presentation)}
+                      >
                         {result.adhd_presentation}
                       </Badge>
                     </TableCell>
@@ -336,11 +382,15 @@ export default async function AssessmentsPage() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline">{result.total_endorsed}/17</Badge>
+                      <Badge variant="outline">
+                        {result.total_endorsed}/17
+                      </Badge>
                     </TableCell>
                     <TableCell>
                       <span className="text-sm text-muted-foreground">
-                        {formatDistanceToNow(new Date(result.completed_at), { addSuffix: true })}
+                        {formatDistanceToNow(new Date(result.completed_at), {
+                          addSuffix: true,
+                        })}
                       </span>
                     </TableCell>
                   </TableRow>
@@ -351,5 +401,5 @@ export default async function AssessmentsPage() {
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }

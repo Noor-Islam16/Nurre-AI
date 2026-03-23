@@ -1,64 +1,76 @@
-import type { Assessment, AssessmentResponse } from '@/lib/types/assessment'
+// lib/utils/assessment-export.ts
+import type { Assessment, AssessmentResponse } from "@/lib/types/assessment";
 
 interface ExportData {
-  assessment: Assessment
-  lastResponse: AssessmentResponse
-  history: AssessmentResponse[]
+  assessment: Assessment;
+  lastResponse: AssessmentResponse;
+  history: AssessmentResponse[];
 }
 
 /**
  * Export assessment results as CSV
  */
 export function exportAsCSV(data: ExportData): void {
-  const { assessment, history } = data
+  const { assessment, history } = data;
 
   // Build CSV header
-  const headers = ['Date', 'Time', 'Score', 'Severity Level', 'Time Taken (seconds)']
+  const headers = [
+    "Date",
+    "Time",
+    "Score",
+    "Severity Level",
+    "Time Taken (seconds)",
+  ];
 
   // Build CSV rows
-  const rows = history.map(response => [
-    new Date(response.completed_at).toLocaleDateString('en-GB'),
-    new Date(response.completed_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
-    response.scores.total?.toString() || 'N/A',
-    response.severity_level.replace(/_/g, ' '),
-    response.time_taken?.toString() || 'N/A'
-  ])
+  const rows = history.map((response) => [
+    new Date(response.completed_at).toLocaleDateString("en-GB"),
+    new Date(response.completed_at).toLocaleTimeString("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+    response.scores.total?.toString() || "N/A",
+    response.severity_level.replace(/_/g, " "),
+    response.time_taken?.toString() || "N/A",
+  ]);
 
   // Combine into CSV string
   const csvContent = [
     [`Assessment: ${assessment.name}`],
-    [`Export Date: ${new Date().toLocaleDateString('en-GB')}`],
+    [`Export Date: ${new Date().toLocaleDateString("en-GB")}`],
     [],
     headers,
-    ...rows
-  ].map(row => row.join(',')).join('\n')
+    ...rows,
+  ]
+    .map((row) => row.join(","))
+    .join("\n");
 
   // Create blob and download
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-  const link = document.createElement('a')
-  const url = URL.createObjectURL(blob)
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const link = document.createElement("a");
+  const url = URL.createObjectURL(blob);
 
-  link.setAttribute('href', url)
-  link.setAttribute('download', `${assessment.type}_results_${Date.now()}.csv`)
-  link.style.visibility = 'hidden'
+  link.setAttribute("href", url);
+  link.setAttribute("download", `${assessment.type}_results_${Date.now()}.csv`);
+  link.style.visibility = "hidden";
 
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
 
 /**
  * Export assessment results as PDF (simple text-based PDF for MVP)
  */
 export function exportAsPDF(data: ExportData): void {
-  const { assessment, lastResponse, history } = data
+  const { assessment, lastResponse, history } = data;
 
   // Create a simple HTML document that can be printed to PDF
-  const printWindow = window.open('', '_blank')
+  const printWindow = window.open("", "_blank");
 
   if (!printWindow) {
-    alert('Please allow pop-ups to export as PDF')
-    return
+    alert("Please allow pop-ups to export as PDF");
+    return;
   }
 
   const htmlContent = `
@@ -138,17 +150,19 @@ export function exportAsPDF(data: ExportData): void {
 
       <div class="summary">
         <h2>Latest Result Summary</h2>
-        <p><strong>Date:</strong> ${new Date(lastResponse.completed_at).toLocaleDateString('en-GB', {
-          day: '2-digit',
-          month: 'long',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
+        <p><strong>Date:</strong> ${new Date(
+          lastResponse.completed_at,
+        ).toLocaleDateString("en-GB", {
+          day: "2-digit",
+          month: "long",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
         })}</p>
-        <p><strong>Score:</strong> ${lastResponse.scores.total !== undefined ? lastResponse.scores.total : 'N/A'}</p>
+        <p><strong>Score:</strong> ${lastResponse.scores.total !== undefined ? lastResponse.scores.total : "N/A"}</p>
         <p><strong>Severity Level:</strong>
-          <span class="severity-badge severity-${lastResponse.severity_level.toLowerCase().replace(/_/g, '-')}">
-            ${lastResponse.severity_level.replace(/_/g, ' ')}
+          <span class="severity-badge severity-${lastResponse.severity_level.toLowerCase().replace(/_/g, "-")}">
+            ${lastResponse.severity_level.replace(/_/g, " ")}
           </span>
         </p>
         <p><strong>Time Taken:</strong> ${Math.floor(lastResponse.time_taken / 60)} minutes ${lastResponse.time_taken % 60} seconds</p>
@@ -166,41 +180,48 @@ export function exportAsPDF(data: ExportData): void {
           </tr>
         </thead>
         <tbody>
-          ${history.map(response => `
+          ${history
+            .map(
+              (response) => `
             <tr>
-              <td>${new Date(response.completed_at).toLocaleDateString('en-GB')}</td>
-              <td>${new Date(response.completed_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</td>
-              <td>${response.scores.total !== undefined ? response.scores.total : 'N/A'}</td>
-              <td>${response.severity_level.replace(/_/g, ' ')}</td>
+              <td>${new Date(response.completed_at).toLocaleDateString("en-GB")}</td>
+              <td>${new Date(response.completed_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</td>
+              <td>${response.scores.total !== undefined ? response.scores.total : "N/A"}</td>
+              <td>${response.severity_level.replace(/_/g, " ")}</td>
               <td>${Math.floor(response.time_taken / 60)}m ${response.time_taken % 60}s</td>
             </tr>
-          `).join('')}
+          `,
+            )
+            .join("")}
         </tbody>
       </table>
 
       <div class="footer">
         <p><strong>Disclaimer:</strong> This is a screening tool result and does not constitute a medical diagnosis.
         Please consult with a qualified healthcare professional for proper evaluation and treatment.</p>
-        <p><strong>Export Date:</strong> ${new Date().toLocaleDateString('en-GB', {
-          day: '2-digit',
-          month: 'long',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
-        })}</p>
+        <p><strong>Export Date:</strong> ${new Date().toLocaleDateString(
+          "en-GB",
+          {
+            day: "2-digit",
+            month: "long",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          },
+        )}</p>
         <p><strong>Assessment Type:</strong> ${assessment.name} (${assessment.version})</p>
       </div>
     </body>
     </html>
-  `
+  `;
 
-  printWindow.document.write(htmlContent)
-  printWindow.document.close()
+  printWindow.document.write(htmlContent);
+  printWindow.document.close();
 
   // Auto-print after a short delay to ensure content is loaded
   setTimeout(() => {
-    printWindow.print()
-  }, 250)
+    printWindow.print();
+  }, 250);
 }
 
 /**
@@ -212,12 +233,12 @@ export async function shareWithGP(data: ExportData): Promise<void> {
 
   const confirmed = confirm(
     `Share ${data.assessment.name} results with your GP?\n\n` +
-    `This will generate a shareable report that you can provide to your healthcare provider.`
-  )
+      `This will generate a shareable report that you can provide to your healthcare provider.`,
+  );
 
   if (confirmed) {
     // Generate PDF for sharing
-    exportAsPDF(data)
+    exportAsPDF(data);
 
     // In production, you would:
     // 1. Mark the response as shared in the database
@@ -225,6 +246,8 @@ export async function shareWithGP(data: ExportData): Promise<void> {
     // 3. Send via email or integrate with NHS systems
     // 4. Log the sharing event
 
-    alert('Results prepared for sharing. The PDF has been generated and is ready to print or save.')
+    alert(
+      "Results prepared for sharing. The PDF has been generated and is ready to print or save.",
+    );
   }
 }

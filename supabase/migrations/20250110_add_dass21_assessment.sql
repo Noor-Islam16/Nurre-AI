@@ -1,3 +1,4 @@
+-- supabase/migrations/20250110_add_dass21_assessment.sql
 -- Add DASS-21 (Depression Anxiety Stress Scales - 21 Items) Assessment
 -- Based on the standard DASS-21 by Lovibond & Lovibond (1995)
 -- Status: COMPLETED

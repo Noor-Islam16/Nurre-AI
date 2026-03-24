@@ -40,10 +40,6 @@ export function AssessmentQuestionComponent({
 }: AssessmentQuestionProps) {
   const progress = (questionNumber / totalQuestions) * 100;
 
-  // ASRS uses frequency labels (Never → Very Often) that map to internal
-  // threshold values — showing "(X pts)" is misleading. Hide for ASRS.
-  const showPointValue = assessmentType !== "asrs";
-
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       {/* Progress Bar */}
@@ -78,7 +74,7 @@ export function AssessmentQuestionComponent({
           </h3>
         </div>
 
-        {/* Answer Options */}
+        {/* Answer Options — no point values shown to user */}
         <RadioGroup
           value={selectedValue?.toString()}
           onValueChange={(value) => onAnswer(parseInt(value))}
@@ -116,20 +112,13 @@ export function AssessmentQuestionComponent({
                   >
                     {option}
                   </span>
-                  {showPointValue && (
-                    <span
-                      className={`text-sm ${isSelected ? "text-accent-600" : "text-gray-400"}`}
-                    >
-                      ({value} pts)
-                    </span>
-                  )}
                 </Label>
               </motion.div>
             );
           })}
         </RadioGroup>
 
-        {/* Navigation Buttons */}
+        {/* Navigation */}
         <div className="flex justify-between items-center pt-4 border-t">
           <Button
             variant="outline"

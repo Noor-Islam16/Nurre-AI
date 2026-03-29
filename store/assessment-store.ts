@@ -1,4 +1,4 @@
-// store / assessment - store.ts;
+// store/assessment-store.ts
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type {
@@ -12,20 +12,14 @@ import { AssessmentService } from "@/lib/services/assessment-service";
 import { useUserStore } from "./user-store";
 
 interface AssessmentStore {
-  // Available assessments
   assessments: Assessment[];
   loadingAssessments: boolean;
-
-  // Current assessment state
   currentAssessment: AssessmentFormState | null;
-
-  // User's assessment history
   assessmentHistory: AssessmentResponse[];
   assessmentStats: Map<AssessmentType, AssessmentStats>;
 
-  // Actions
   fetchAssessments: () => Promise<void>;
-  startAssessment: (assessment: Assessment, startingIndex?: number) => void;
+  startAssessment: (assessment: Assessment, resume?: boolean) => void;
   answerQuestion: (questionId: number, value: number) => void;
   nextQuestion: () => void;
   previousQuestion: () => void;
@@ -58,18 +52,22 @@ export const useAssessmentStore = create<AssessmentStore>()(
         }
       },
 
-      startAssessment: async (
-        assessment: Assessment,
-        startingIndex?: number,
-      ) => {
+      // ── startAssessment ────────────────────────────────────────────────────
+      // resume=true  → load saved localStorage progress (user clicked Resume)
+      // resume=false → always start completely fresh (user clicked Start)
+      //
+      // Previously the function always tried to load localStorage, so a
+      // returning user who had stale progress from a prior completed attempt
+      // would have their old responses loaded and appear to be mid-assessment.
+      startAssessment: (assessment: Assessment, resume = false) => {
         const user = useUserStore.getState().user;
 
-        let index = startingIndex ?? 0;
+        let index = 0;
         let responses: Record<number, number> = {};
         let startTime = Date.now();
 
-        // If resuming from localStorage, load saved progress
-        if (user && startingIndex === undefined) {
+        if (resume && user) {
+          // Only load saved progress when the user explicitly wants to resume
           try {
             const progressKey = `assessment-progress:${user.id}:${assessment.type}`;
             const savedProgress = localStorage.getItem(progressKey);
@@ -82,8 +80,15 @@ export const useAssessmentStore = create<AssessmentStore>()(
           } catch (error) {
             console.error("Error loading progress from localStorage:", error);
           }
-        } else if (startingIndex !== undefined) {
-          index = startingIndex;
+        } else if (user) {
+          // Starting fresh — wipe any stale localStorage progress for this type
+          // so it can never bleed into this new attempt
+          try {
+            const progressKey = `assessment-progress:${user.id}:${assessment.type}`;
+            localStorage.removeItem(progressKey);
+          } catch (error) {
+            console.error("Error clearing stale localStorage progress:", error);
+          }
         }
 
         set({
@@ -101,15 +106,13 @@ export const useAssessmentStore = create<AssessmentStore>()(
         const state = get().currentAssessment;
         if (!state) return;
 
-        const newResponses = {
-          ...state.responses,
-          [questionId]: value,
-        };
-
         set({
           currentAssessment: {
             ...state,
-            responses: newResponses,
+            responses: {
+              ...state.responses,
+              [questionId]: value,
+            },
           },
         });
       },
@@ -161,13 +164,15 @@ export const useAssessmentStore = create<AssessmentStore>()(
           );
 
           const progressKey = `assessment-progress:${user.id}:${state.assessment.type}`;
-          const progress = {
-            index: state.currentQuestionIndex,
-            responses: state.responses,
-            startTime: state.startTime,
-            ts: Date.now(),
-          };
-          localStorage.setItem(progressKey, JSON.stringify(progress));
+          localStorage.setItem(
+            progressKey,
+            JSON.stringify({
+              index: state.currentQuestionIndex,
+              responses: state.responses,
+              startTime: state.startTime,
+              ts: Date.now(),
+            }),
+          );
         } catch (error) {
           console.error("[Assessment] Error saving progress:", error);
         }
@@ -205,7 +210,6 @@ export const useAssessmentStore = create<AssessmentStore>()(
       clearCurrentAssessment: async () => {
         const state = get().currentAssessment;
 
-        // Clear localStorage progress when assessment is cleared
         if (state) {
           try {
             const user = useUserStore.getState().user;

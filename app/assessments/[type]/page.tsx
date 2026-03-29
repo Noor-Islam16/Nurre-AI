@@ -47,10 +47,7 @@ export default function AssessmentFlowPage() {
   const [showSafetyInterstitial, setShowSafetyInterstitial] = useState(false);
   const [pendingNextQuestion, setPendingNextQuestion] = useState(false);
 
-  // ── FIX: hold a stable ref to the assessment object so it survives
-  // clearCurrentAssessment() nulling out the Zustand store mid-async call
   const assessmentRef = useRef<Assessment | null>(null);
-
   const assessmentType = params.type as string;
 
   useEffect(() => {
@@ -61,27 +58,22 @@ export default function AssessmentFlowPage() {
     initializeAssessment();
   }, [assessmentType]);
 
-  // Keep ref in sync with store
   useEffect(() => {
     if (currentAssessment?.assessment) {
       assessmentRef.current = currentAssessment.assessment;
     }
   }, [currentAssessment]);
 
-  // Auto-save every 5 seconds of inactivity
   useEffect(() => {
     if (currentAssessment && !currentAssessment.isComplete) {
       if (autoSaveTimer) clearTimeout(autoSaveTimer);
-
       const timer = setTimeout(async () => {
         setSaving(true);
         await saveProgress();
         setSaving(false);
       }, 5000);
-
       setAutoSaveTimer(timer);
     }
-
     return () => {
       if (autoSaveTimer) clearTimeout(autoSaveTimer);
     };
@@ -111,11 +103,18 @@ export default function AssessmentFlowPage() {
         return;
       }
 
+      // Check Supabase for an in-progress attempt (not a completed one)
       const progress = await assessmentService.getOrCreateProgress(
         user.id,
         assessment.id,
       );
-      if (progress && Object.keys(progress.responses).length > 0) {
+
+      const hasPartialProgress =
+        progress && Object.keys(progress.responses).length > 0;
+
+      if (hasPartialProgress) {
+        // Resume from Supabase progress — pass resume=true so store
+        // loads the saved index and responses
         useAssessmentStore.setState({
           currentAssessment: {
             assessment,
@@ -126,7 +125,8 @@ export default function AssessmentFlowPage() {
           },
         });
       } else {
-        useAssessmentStore.getState().startAssessment(assessment);
+        // Fresh start — resume=false (default) clears any stale localStorage
+        useAssessmentStore.getState().startAssessment(assessment, false);
       }
     }
 
@@ -142,7 +142,6 @@ export default function AssessmentFlowPage() {
       ];
     answerQuestion(currentQuestion.id, value);
 
-    // PHQ-9 Q9 safety check
     if (
       currentAssessment.assessment.type === "phq9" &&
       currentQuestion.id === 9 &&
@@ -176,16 +175,12 @@ export default function AssessmentFlowPage() {
     if (pendingNextQuestion) return;
 
     if (currentAssessment.isComplete) {
-      // ── Snapshot the assessment BEFORE completeAssessment() clears the store
-      // currentAssessment will be null by the time the await resolves
       const snapshotAssessment =
         assessmentRef.current ?? currentAssessment.assessment;
 
       setCompleting(true);
-
       try {
         const response = await completeAssessment();
-
         if (response && snapshotAssessment) {
           const assessmentResult = await assessmentService.getAssessmentResult(
             snapshotAssessment,
@@ -238,7 +233,10 @@ export default function AssessmentFlowPage() {
 
   const handleRetake = () => {
     if (assessmentRef.current) {
-      useAssessmentStore.getState().startAssessment(assessmentRef.current);
+      // resume=false → fresh start, clears stale localStorage
+      useAssessmentStore
+        .getState()
+        .startAssessment(assessmentRef.current, false);
       setShowResult(false);
       setResult(null);
     }
@@ -248,7 +246,6 @@ export default function AssessmentFlowPage() {
     router.push("/assessments?tab=history");
   };
 
-  // ── Completing spinner — shown while saving result + fetching interpretation
   if (completing) {
     return (
       <div className="container mx-auto px-4 py-8 max-w-4xl">
@@ -262,7 +259,6 @@ export default function AssessmentFlowPage() {
     );
   }
 
-  // ── Initial loading spinner
   if (loading) {
     return (
       <div className="container mx-auto px-4 py-8 max-w-4xl">
@@ -276,7 +272,6 @@ export default function AssessmentFlowPage() {
     );
   }
 
-  // ── Results screen
   if (showResult && result) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -289,8 +284,6 @@ export default function AssessmentFlowPage() {
     );
   }
 
-  // ── Error guard — only reached if genuinely no assessment loaded
-  // (completing flag prevents this from showing during the async completion)
   if (!currentAssessment) {
     return (
       <div className="container mx-auto px-4 py-8 max-w-4xl">
@@ -319,7 +312,6 @@ export default function AssessmentFlowPage() {
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-4xl">
-      {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -359,7 +351,6 @@ export default function AssessmentFlowPage() {
         </div>
       </motion.div>
 
-      {/* Question */}
       <AnimatePresence mode="wait">
         <AssessmentQuestionComponent
           key={currentQuestion.id}
@@ -380,7 +371,6 @@ export default function AssessmentFlowPage() {
         />
       </AnimatePresence>
 
-      {/* Completion message */}
       {currentAssessment.isComplete && (
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}

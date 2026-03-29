@@ -5,13 +5,7 @@ import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AssessmentMiniCard } from "@/components/assessments/assessment-mini-card";
@@ -34,15 +28,7 @@ import {
 import { useAssessmentStore } from "@/store/assessment-store";
 import { useMoodStore } from "@/store/mood-store";
 import { createClient } from "@/lib/supabase/client";
-import {
-  Brain,
-  TrendingUp,
-  Clock,
-  FileText,
-  AlertCircle,
-  BarChart3,
-  Calendar,
-} from "lucide-react";
+import { Brain, FileText, AlertCircle } from "lucide-react";
 import { AssessmentService } from "@/lib/services/assessment-service";
 import type { AssessmentResponse, Assessment } from "@/lib/types/assessment";
 import { ASSESSMENT_CONFIG } from "@/lib/types/assessment";
@@ -73,23 +59,17 @@ export function AssessmentsPageComponent() {
   const [selectedAssessment, setSelectedAssessment] =
     useState<Assessment | null>(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
-
-  // Consent modal state
   const [showConsentModal, setShowConsentModal] = useState(false);
   const [pendingAssessment, setPendingAssessment] = useState<Assessment | null>(
     null,
   );
-
-  // Filter and sort state
   const [domainFilter, setDomainFilter] = useState<DomainFilter>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [sortOption, setSortOption] = useState<SortOption>("recommended");
-
   const [showCrisisModal, setShowCrisisModal] = useState(false);
 
   useEffect(() => {
     loadData();
-
     const shouldShowCrisis = searchParams.get("showCrisis") === "true";
     if (shouldShowCrisis) {
       setShowCrisisModal(true);
@@ -116,9 +96,7 @@ export function AssessmentsPageComponent() {
         user.id,
         assessment.type,
       );
-      if (lastResponse) {
-        responses.set(assessment.type, lastResponse);
-      }
+      if (lastResponse) responses.set(assessment.type, lastResponse);
     }
     setLastResponses(responses);
 
@@ -161,11 +139,9 @@ export function AssessmentsPageComponent() {
       if (recentMood.mood === "terrible" || recentMood.mood === "bad") {
         const phq9 = assessments.find((a) => a.type === "phq9");
         const lastPhq9 = lastResponses.get("phq9");
-
         if (phq9 && lastPhq9) {
           const daysSince = Math.floor(
-            (Date.now() - new Date(lastPhq9.completed_at).getTime()) /
-              (1000 * 60 * 60 * 24),
+            (Date.now() - new Date(lastPhq9.completed_at).getTime()) / 86400000,
           );
           if (daysSince >= 14) {
             setRecommended(phq9);
@@ -183,11 +159,9 @@ export function AssessmentsPageComponent() {
       ) {
         const asrs = assessments.find((a) => a.type === "asrs");
         const lastAsrs = lastResponses.get("asrs");
-
         if (asrs && lastAsrs) {
           const daysSince = Math.floor(
-            (Date.now() - new Date(lastAsrs.completed_at).getTime()) /
-              (1000 * 60 * 60 * 24),
+            (Date.now() - new Date(lastAsrs.completed_at).getTime()) / 86400000,
           );
           if (daysSince >= 30) {
             setRecommended(asrs);
@@ -205,11 +179,9 @@ export function AssessmentsPageComponent() {
       ) {
         const gad7 = assessments.find((a) => a.type === "gad7");
         const lastGad7 = lastResponses.get("gad7");
-
         if (gad7 && lastGad7) {
           const daysSince = Math.floor(
-            (Date.now() - new Date(lastGad7.completed_at).getTime()) /
-              (1000 * 60 * 60 * 24),
+            (Date.now() - new Date(lastGad7.completed_at).getTime()) / 86400000,
           );
           if (daysSince >= 14) {
             setRecommended(gad7);
@@ -226,17 +198,14 @@ export function AssessmentsPageComponent() {
       assessment: Assessment;
       daysSince: number;
     }> = [];
-
     for (const assessment of assessments) {
       const lastResponse = lastResponses.get(assessment.type);
       if (lastResponse) {
         const daysSince = Math.floor(
           (Date.now() - new Date(lastResponse.completed_at).getTime()) /
-            (1000 * 60 * 60 * 24),
+            86400000,
         );
-        const config = ASSESSMENT_CONFIG[assessment.type];
-
-        if (daysSince >= config.retakeInterval) {
+        if (daysSince >= ASSESSMENT_CONFIG[assessment.type].retakeInterval) {
           eligibleAssessments.push({ assessment, daysSince });
         }
       }
@@ -258,30 +227,25 @@ export function AssessmentsPageComponent() {
     setRecommendationReason("");
   };
 
-  // ─── FIX: navigate to the assessment page after starting ─────────────────
+  // ── Navigation helper — always starts fresh (resume=false) ───────────────
   const navigateToAssessment = (assessment: Assessment) => {
-    startAssessment(assessment);
+    startAssessment(assessment, false); // false = fresh start, clears stale progress
     router.push(`/assessments/${assessment.type}`);
   };
 
   const handleStartAssessment = (assessment: Assessment) => {
     const hasConsent = localStorage.getItem("assessments-consent") === "true";
-
     if (!hasConsent) {
-      // Store pending assessment and show consent modal first
       setPendingAssessment(assessment);
       setShowConsentModal(true);
     } else {
-      // Consent already given — go straight to the quiz
       navigateToAssessment(assessment);
     }
   };
 
   const handleConsentAccept = () => {
     setShowConsentModal(false);
-
     if (pendingAssessment) {
-      // Navigate after consent is accepted
       navigateToAssessment(pendingAssessment);
       setPendingAssessment(null);
     }
@@ -297,8 +261,7 @@ export function AssessmentsPageComponent() {
     try {
       const progressKey = `assessment-progress:${user.id}:${assessmentType}`;
       return localStorage.getItem(progressKey) !== null;
-    } catch (error) {
-      console.error("Error checking resume state:", error);
+    } catch {
       return false;
     }
   };
@@ -307,17 +270,17 @@ export function AssessmentsPageComponent() {
     let filtered = [...assessments];
 
     if (domainFilter !== "all") {
-      filtered = filtered.filter((assessment) => {
-        const config = ASSESSMENT_CONFIG[assessment.type];
+      filtered = filtered.filter((a) => {
+        const config = ASSESSMENT_CONFIG[a.type];
         switch (domainFilter) {
           case "attention":
             return config.category === "adhd";
           case "mood":
-            return assessment.type === "phq9";
+            return a.type === "phq9";
           case "anxiety":
-            return assessment.type === "gad7";
+            return a.type === "gad7";
           case "stress":
-            return assessment.type === "dass21";
+            return a.type === "dass21";
           default:
             return true;
         }
@@ -325,71 +288,62 @@ export function AssessmentsPageComponent() {
     }
 
     if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim();
-      filtered = filtered.filter((assessment) => {
-        const config = ASSESSMENT_CONFIG[assessment.type];
-        const searchableText = [
-          assessment.name,
+      const q = searchQuery.toLowerCase().trim();
+      filtered = filtered.filter((a) => {
+        const config = ASSESSMENT_CONFIG[a.type];
+        return [
+          a.name,
           config.shortName,
           config.displayName,
-          assessment.description,
-          assessment.type,
+          a.description,
+          a.type,
         ]
           .join(" ")
-          .toLowerCase();
-        return searchableText.includes(query);
+          .toLowerCase()
+          .includes(q);
       });
     }
 
-    const sortedAssessments = [...filtered];
-
+    const sorted = [...filtered];
     switch (sortOption) {
       case "recommended":
-        sortedAssessments.sort((a, b) => {
+        sorted.sort((a, b) => {
           if (recommended?.id === a.id) return -1;
           if (recommended?.id === b.id) return 1;
-
-          const aLastResponse = lastResponses.get(a.type);
-          const bLastResponse = lastResponses.get(b.type);
-
-          if (!aLastResponse && bLastResponse) return -1;
-          if (aLastResponse && !bLastResponse) return 1;
-          if (!aLastResponse && !bLastResponse) return 0;
-
+          const aLast = lastResponses.get(a.type);
+          const bLast = lastResponses.get(b.type);
+          if (!aLast && bLast) return -1;
+          if (aLast && !bLast) return 1;
+          if (!aLast && !bLast) return 0;
           const aDays = Math.floor(
-            (Date.now() - new Date(aLastResponse!.completed_at).getTime()) /
-              (1000 * 60 * 60 * 24),
+            (Date.now() - new Date(aLast!.completed_at).getTime()) / 86400000,
           );
           const bDays = Math.floor(
-            (Date.now() - new Date(bLastResponse!.completed_at).getTime()) /
-              (1000 * 60 * 60 * 24),
+            (Date.now() - new Date(bLast!.completed_at).getTime()) / 86400000,
           );
           return bDays - aDays;
         });
         break;
-
       case "shortest":
-        sortedAssessments.sort((a, b) => a.time_estimate - b.time_estimate);
+        sorted.sort((a, b) => a.time_estimate - b.time_estimate);
         break;
-
       case "most_used":
-        sortedAssessments.sort((a, b) => {
-          const aCount = assessmentHistory.filter(
+        sorted.sort((a, b) => {
+          const aC = assessmentHistory.filter(
             (h) => h.assessment_type === a.type,
           ).length;
-          const bCount = assessmentHistory.filter(
+          const bC = assessmentHistory.filter(
             (h) => h.assessment_type === b.type,
           ).length;
-          return bCount - aCount;
+          return bC - aC;
         });
         break;
-
       case "a_to_z":
-        sortedAssessments.sort((a, b) => a.name.localeCompare(b.name));
+        sorted.sort((a, b) => a.name.localeCompare(b.name));
         break;
     }
 
-    return sortedAssessments;
+    return sorted;
   };
 
   const filteredAssessments = getFilteredAndSortedAssessments();
@@ -398,7 +352,6 @@ export function AssessmentsPageComponent() {
     hidden: { opacity: 0 },
     show: { opacity: 1, transition: { staggerChildren: 0.1 } },
   };
-
   const item = {
     hidden: { opacity: 0, y: 20 },
     show: { opacity: 1, y: 0 },
@@ -406,7 +359,7 @@ export function AssessmentsPageComponent() {
 
   return (
     <div>
-      {/* Info Alert with Crisis Link */}
+      {/* Info Alert + Crisis Link */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -423,7 +376,7 @@ export function AssessmentsPageComponent() {
         <CrisisHelpLink defaultOpen={showCrisisModal} />
       </motion.div>
 
-      {/* Start Here Recommendation Strip */}
+      {/* Recommendation Strip */}
       {recommended && (
         <motion.div
           initial={{ opacity: 0, y: -10 }}
@@ -438,7 +391,7 @@ export function AssessmentsPageComponent() {
         </motion.div>
       )}
 
-      {/* Main Content Tabs */}
+      {/* Tabs */}
       <Tabs defaultValue="available" className="space-y-6">
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="available">Available Tests</TabsTrigger>
@@ -446,7 +399,7 @@ export function AssessmentsPageComponent() {
           <TabsTrigger value="insights">Insights</TabsTrigger>
         </TabsList>
 
-        {/* Available Assessments Tab */}
+        {/* Available */}
         <TabsContent value="available">
           <FilterBar
             domain={domainFilter}
@@ -518,7 +471,7 @@ export function AssessmentsPageComponent() {
           </motion.div>
         </TabsContent>
 
-        {/* History Tab */}
+        {/* History */}
         <TabsContent value="history">
           {assessmentHistory.length === 0 ? (
             <Card>
@@ -534,16 +487,13 @@ export function AssessmentsPageComponent() {
             <ResultsList
               items={(() => {
                 const grouped = new Map<string, AssessmentResponse[]>();
-
                 for (const response of assessmentHistory) {
                   const assessment = assessments.find(
                     (a) => a.id === response.assessment_id,
                   );
                   if (!assessment) continue;
-
-                  if (!grouped.has(assessment.type)) {
+                  if (!grouped.has(assessment.type))
                     grouped.set(assessment.type, []);
-                  }
                   grouped.get(assessment.type)!.push(response);
                 }
 
@@ -556,17 +506,15 @@ export function AssessmentsPageComponent() {
                 for (const [type, responses] of grouped.entries()) {
                   const assessment = assessments.find((a) => a.type === type);
                   if (!assessment) continue;
-
-                  const sortedResponses = responses.sort(
+                  const sorted = responses.sort(
                     (a, b) =>
                       new Date(b.completed_at).getTime() -
                       new Date(a.completed_at).getTime(),
                   );
-
                   items.push({
                     assessment,
-                    lastResponse: sortedResponses[0],
-                    history: sortedResponses,
+                    lastResponse: sorted[0],
+                    history: sorted,
                   });
                 }
 
@@ -601,24 +549,19 @@ export function AssessmentsPageComponent() {
           )}
         </TabsContent>
 
-        {/* Insights Tab */}
+        {/* Insights */}
         <TabsContent value="insights">
           <InsightsPanel
             historyByType={(() => {
               const grouped: Record<string, typeof assessmentHistory> = {};
-
               for (const response of assessmentHistory) {
                 const assessment = assessments.find(
                   (a) => a.id === response.assessment_id,
                 );
                 if (!assessment) continue;
-
-                if (!grouped[assessment.type]) {
-                  grouped[assessment.type] = [];
-                }
+                if (!grouped[assessment.type]) grouped[assessment.type] = [];
                 grouped[assessment.type].push(response);
               }
-
               return grouped;
             })()}
             assessments={assessments}
@@ -631,14 +574,12 @@ export function AssessmentsPageComponent() {
         </TabsContent>
       </Tabs>
 
-      {/* Assessment Details Modal */}
       <AssessmentDetailsModal
         assessment={selectedAssessment}
         open={isDetailsModalOpen}
         onClose={() => setIsDetailsModalOpen(false)}
       />
 
-      {/* Consent Modal */}
       <ConsentModal open={showConsentModal} onAccept={handleConsentAccept} />
     </div>
   );

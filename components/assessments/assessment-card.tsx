@@ -196,13 +196,37 @@ export function AssessmentCard({
           <Button
             onClick={handleStart}
             disabled={loading}
-            className="w-full bg-primary text-white hover:bg-primary/90"
+            className="w-full bg-primary text-white hover:bg-primary/90 flex items-center justify-center gap-2"
           >
-            {loading
-              ? "Starting..."
-              : lastResponse
-                ? "Retake Assessment"
-                : "Start Assessment"}
+            {loading ? (
+              <>
+                <svg
+                  className="animate-spin h-4 w-4 flex-shrink-0"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                >
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeOpacity="0.3"
+                    strokeWidth="3"
+                  />
+                  <path
+                    d="M12 2a10 10 0 0 1 10 10"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                  />
+                </svg>
+                Starting...
+              </>
+            ) : lastResponse ? (
+              "Retake Assessment"
+            ) : (
+              "Start Assessment"
+            )}
           </Button>
         ) : (
           <div className="space-y-2">

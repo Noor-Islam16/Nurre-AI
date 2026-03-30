@@ -1,6 +1,6 @@
-// assessment - mini - card.tsx;
 "use client";
 
+import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +24,7 @@ export function AssessmentMiniCard({
   onStart,
   onDetails,
 }: AssessmentMiniCardProps) {
+  const [loading, setLoading] = useState(false);
   const config = ASSESSMENT_CONFIG[assessment.type];
 
   const formatDate = (date: Date) => {
@@ -32,6 +33,11 @@ export function AssessmentMiniCard({
       month: "short",
       year: "numeric",
     });
+  };
+
+  const handleStart = () => {
+    setLoading(true);
+    onStart();
   };
 
   return (
@@ -43,7 +49,6 @@ export function AssessmentMiniCard({
             {assessment.name}
           </h3>
           <div className="flex items-center gap-1.5 flex-shrink-0">
-            {/* Render tags from config */}
             {config.tags.slice(0, 2).map((tag) => (
               <Badge
                 key={tag}
@@ -53,7 +58,6 @@ export function AssessmentMiniCard({
                 {tag}
               </Badge>
             ))}
-            {/* Code Badge */}
             <Badge
               variant="secondary"
               className={cn(
@@ -74,7 +78,6 @@ export function AssessmentMiniCard({
           {config.purposeOneLiner}
         </p>
 
-        {/* Spacer to push meta and CTA to bottom */}
         <div className="flex-1" />
 
         {/* Meta Row */}
@@ -108,11 +111,40 @@ export function AssessmentMiniCard({
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Button
-              onClick={onStart}
-              className="bg-violet-600 hover:bg-violet-700 text-white"
+              onClick={handleStart}
+              disabled={loading}
+              className="bg-violet-600 hover:bg-violet-700 text-white flex items-center gap-1.5"
               size="sm"
             >
-              Start
+              {loading ? (
+                <>
+                  <svg
+                    className="animate-spin h-3.5 w-3.5 flex-shrink-0"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                  >
+                    <circle
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeOpacity="0.3"
+                      strokeWidth="3"
+                    />
+                    <path
+                      d="M12 2a10 10 0 0 1 10 10"
+                      stroke="currentColor"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                  Starting...
+                </>
+              ) : hasResume ? (
+                "Resume"
+              ) : (
+                "Start"
+              )}
             </Button>
             <Button
               onClick={onDetails}

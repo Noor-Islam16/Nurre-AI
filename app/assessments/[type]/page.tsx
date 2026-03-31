@@ -46,6 +46,7 @@ export default function AssessmentFlowPage() {
   );
   const [showSafetyInterstitial, setShowSafetyInterstitial] = useState(false);
   const [pendingNextQuestion, setPendingNextQuestion] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const assessmentRef = useRef<Assessment | null>(null);
   const assessmentType = params.type as string;
@@ -81,65 +82,69 @@ export default function AssessmentFlowPage() {
 
   const initializeAssessment = async () => {
     setLoading(true);
+    setSubmitError(null);
 
-    // ── Run auth check and assessment fetch in parallel ─────────────────────
-    // On Vercel Free + Supabase Free the cold-start penalty is ~1-3s per call.
-    // Running them concurrently cuts the wait roughly in half.
-    const [
-      { data: { user } },
-      assessment,
-    ] = await Promise.all([
-      supabase.auth.getUser(),
-      // Only fetch assessment if we actually need it (avoid wasted work)
-      (!currentAssessment || currentAssessment.assessment.type !== assessmentType)
-        ? assessmentService.getAssessment(assessmentType as any)
-        : Promise.resolve(null),
-    ]);
+    try {
+      // ── Run auth check and assessment fetch in parallel ─────────────────────
+      // On Vercel Free + Supabase Free the cold-start penalty is ~1-3s per call.
+      // Running them concurrently cuts the wait roughly in half.
+      const [
+        { data: { user } },
+        assessment,
+      ] = await Promise.all([
+        supabase.auth.getUser(),
+        // Only fetch assessment if we actually need it (avoid wasted work)
+        (!currentAssessment || currentAssessment.assessment.type !== assessmentType)
+          ? assessmentService.getAssessment(assessmentType as any)
+          : Promise.resolve(null),
+      ]);
 
-    if (!user) {
-      router.push("/login");
-      return;
-    }
-    setUser(user);
+      if (!user) {
+        router.push("/login");
+        return;
+      }
+      setUser(user);
 
-    // If we already have the right assessment loaded in the store, skip re-init
-    if (currentAssessment && currentAssessment.assessment.type === assessmentType) {
+      // If we already have the right assessment loaded in the store, skip re-init
+      if (currentAssessment && currentAssessment.assessment.type === assessmentType) {
+        return;
+      }
+
+      if (!assessment) {
+        router.push("/profile?tab=assessments");
+        return;
+      }
+
+      // Check Supabase for an in-progress attempt (not a completed one)
+      // getOrCreateProgress now uses upsert internally — single round-trip
+      const progress = await assessmentService.getOrCreateProgress(
+        user.id,
+        assessment.id,
+      );
+
+      const hasPartialProgress =
+        progress && Object.keys(progress.responses).length > 0;
+
+      if (hasPartialProgress) {
+        // Resume from Supabase progress
+        useAssessmentStore.setState({
+          currentAssessment: {
+            assessment,
+            currentQuestionIndex: progress.current_question_index,
+            responses: progress.responses as Record<number, number>,
+            startTime: new Date(progress.started_at).getTime(),
+            isComplete: false,
+          },
+        });
+      } else {
+        // Fresh start — clears any stale localStorage
+        useAssessmentStore.getState().startAssessment(assessment, false);
+      }
+    } catch (error) {
+      console.error("Error initializing assessment:", error);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    if (!assessment) {
-      router.push("/profile?tab=assessments");
-      return;
-    }
-
-    // Check Supabase for an in-progress attempt (not a completed one)
-    // getOrCreateProgress now uses upsert internally — single round-trip
-    const progress = await assessmentService.getOrCreateProgress(
-      user.id,
-      assessment.id,
-    );
-
-    const hasPartialProgress =
-      progress && Object.keys(progress.responses).length > 0;
-
-    if (hasPartialProgress) {
-      // Resume from Supabase progress
-      useAssessmentStore.setState({
-        currentAssessment: {
-          assessment,
-          currentQuestionIndex: progress.current_question_index,
-          responses: progress.responses as Record<number, number>,
-          startTime: new Date(progress.started_at).getTime(),
-          isComplete: false,
-        },
-      });
-    } else {
-      // Fresh start — clears any stale localStorage
-      useAssessmentStore.getState().startAssessment(assessment, false);
-    }
-
-    setLoading(false);
   };
 
   const handleAnswer = (value: number) => {
@@ -193,6 +198,7 @@ export default function AssessmentFlowPage() {
         useAssessmentStore.getState().nextQuestion();
       }
 
+      setSubmitError(null);
       const snapshotAssessment =
         assessmentRef.current ?? currentAssessment.assessment;
 
@@ -206,13 +212,17 @@ export default function AssessmentFlowPage() {
           );
           setResult(assessmentResult);
           setShowResult(true);
+        } else {
+          setSubmitError("Failed to submit assessment results. Please check your connection and try again.");
         }
       } catch (error) {
         console.error("Error completing assessment:", error);
+        setSubmitError("An unexpected error occurred. Please try again.");
       } finally {
         setCompleting(false);
       }
     } else {
+      setSubmitError(null);
       nextQuestion();
     }
   };
@@ -368,6 +378,21 @@ export default function AssessmentFlowPage() {
           </p>
         </div>
       </motion.div>
+
+      {submitError && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-8"
+        >
+          <Alert className="bg-red-50 border-red-200">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="text-red-800">
+              {submitError}
+            </AlertDescription>
+          </Alert>
+        </motion.div>
+      )}
 
       <AssessmentQuestionComponent
         question={currentQuestion}

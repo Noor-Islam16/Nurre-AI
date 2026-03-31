@@ -193,18 +193,25 @@ export default function AssessmentFlowPage() {
       currentAssessment.assessment.questions.length - 1;
 
     if (currentAssessment.isComplete || isLastQuestion) {
+      // Always snapshot the assessment BEFORE any state mutations
+      const snapshotAssessment =
+        assessmentRef.current ?? currentAssessment.assessment;
+
       if (!currentAssessment.isComplete) {
-        // Synchronously mark as complete in the store before calling completeAssessment
+        // Mark as complete in the store synchronously via getState() —
+        // avoids relying on the React-closure-bound nextQuestion which may
+        // have captured a stale reference before this render cycle.
         useAssessmentStore.getState().nextQuestion();
       }
 
       setSubmitError(null);
-      const snapshotAssessment =
-        assessmentRef.current ?? currentAssessment.assessment;
-
       setCompleting(true);
       try {
-        const response = await completeAssessment();
+        // Call completeAssessment via getState() so it always reads the
+        // freshest Zustand state (isComplete:true set just above).
+        // The stale-closure version from the component destructure may still
+        // see isComplete:false on slower devices, causing it to return null.
+        const response = await useAssessmentStore.getState().completeAssessment();
         if (response && snapshotAssessment) {
           const assessmentResult = await assessmentService.getAssessmentResult(
             snapshotAssessment,

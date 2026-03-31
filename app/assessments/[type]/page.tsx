@@ -183,7 +183,16 @@ export default function AssessmentFlowPage() {
     if (!currentAssessment) return;
     if (pendingNextQuestion) return;
 
-    if (currentAssessment.isComplete) {
+    const isLastQuestion =
+      currentAssessment.currentQuestionIndex ===
+      currentAssessment.assessment.questions.length - 1;
+
+    if (currentAssessment.isComplete || isLastQuestion) {
+      if (!currentAssessment.isComplete) {
+        // Synchronously mark as complete in the store before calling completeAssessment
+        useAssessmentStore.getState().nextQuestion();
+      }
+
       const snapshotAssessment =
         assessmentRef.current ?? currentAssessment.assessment;
 
@@ -360,41 +369,22 @@ export default function AssessmentFlowPage() {
         </div>
       </motion.div>
 
-      <AnimatePresence mode="wait">
-        <AssessmentQuestionComponent
-          key={currentQuestion.id}
-          question={currentQuestion}
-          questionNumber={currentAssessment.currentQuestionIndex + 1}
-          totalQuestions={currentAssessment.assessment.questions.length}
-          selectedValue={selectedValue}
-          onAnswer={handleAnswer}
-          onNext={handleNext}
-          onPrevious={handlePrevious}
-          canGoNext={selectedValue !== undefined}
-          canGoPrevious={currentAssessment.currentQuestionIndex > 0}
-          isLastQuestion={
-            currentAssessment.currentQuestionIndex ===
-            currentAssessment.assessment.questions.length - 1
-          }
-          assessmentType={currentAssessment.assessment.type}
-        />
-      </AnimatePresence>
-
-      {currentAssessment.isComplete && (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="mt-8"
-        >
-          <Alert className="border-green-200 bg-green-50">
-            <CheckCircle className="h-4 w-4 text-green-600" />
-            <AlertDescription className="text-green-800">
-              Great job! You&apos;ve answered all questions. Click
-              &quot;Complete&quot; to see your results.
-            </AlertDescription>
-          </Alert>
-        </motion.div>
-      )}
+      <AssessmentQuestionComponent
+        question={currentQuestion}
+        questionNumber={currentAssessment.currentQuestionIndex + 1}
+        totalQuestions={currentAssessment.assessment.questions.length}
+        selectedValue={selectedValue}
+        onAnswer={handleAnswer}
+        onNext={handleNext}
+        onPrevious={handlePrevious}
+        canGoNext={selectedValue !== undefined}
+        canGoPrevious={currentAssessment.currentQuestionIndex > 0}
+        isLastQuestion={
+          currentAssessment.currentQuestionIndex ===
+          currentAssessment.assessment.questions.length - 1
+        }
+        assessmentType={currentAssessment.assessment.type}
+      />
 
       <div className="mt-8 text-center">
         <p className="text-sm text-gray-500">

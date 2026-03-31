@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
@@ -54,98 +54,100 @@ export function AssessmentQuestionComponent({
       </div>
 
       {/* Question Card */}
-      <motion.div
-        key={question.id}
-        initial={{ opacity: 0, x: 20 }}
-        animate={{ opacity: 1, x: 0 }}
-        exit={{ opacity: 0, x: -20 }}
-        transition={{ duration: 0.3 }}
-        className="bg-white rounded-lg shadow-sm border p-6 space-y-6"
-      >
-        {/* Question Text */}
-        <div className="space-y-2">
-          {question.section && (
-            <span className="text-sm text-gray-500 uppercase tracking-wide">
-              Section {question.section}
-            </span>
-          )}
-          <h3 className="text-lg font-medium text-gray-900 leading-relaxed">
-            {question.text}
-          </h3>
-        </div>
-
-        {/* Answer Options — no point values shown to user */}
-        <RadioGroup
-          value={selectedValue?.toString()}
-          onValueChange={(value) => onAnswer(parseInt(value))}
-          className="space-y-3"
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={question.id}
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -20 }}
+          transition={{ duration: 0.3 }}
+          className="bg-white rounded-lg shadow-sm border p-6 space-y-6"
         >
-          {question.options.map((option, index) => {
-            const value = question.values[index];
-            const isSelected = selectedValue === value;
+          {/* Question Text */}
+          <div className="space-y-2">
+            {question.section && (
+              <span className="text-sm text-gray-500 uppercase tracking-wide">
+                Section {question.section}
+              </span>
+            )}
+            <h3 className="text-lg font-medium text-gray-900 leading-relaxed">
+              {question.text}
+            </h3>
+          </div>
 
-            return (
-              <motion.div
-                key={value}
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.99 }}
-              >
-                <Label
-                  htmlFor={`option-${value}`}
-                  className={`
-                    flex items-center space-x-3 p-4 rounded-lg border-2 cursor-pointer
-                    transition-all duration-200
-                    ${
-                      isSelected
-                        ? "border-accent-500 bg-accent-50"
-                        : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
-                    }
-                  `}
+          {/* Answer Options — no point values shown to user */}
+          <RadioGroup
+            value={selectedValue?.toString()}
+            onValueChange={(value) => onAnswer(parseInt(value))}
+            className="space-y-3"
+          >
+            {question.options.map((option, index) => {
+              const value = question.values[index];
+              const isSelected = selectedValue === value;
+
+              return (
+                <motion.div
+                  key={value}
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.99 }}
                 >
-                  <RadioGroupItem
-                    value={value.toString()}
-                    id={`option-${value}`}
-                    className="flex-shrink-0"
-                  />
-                  <span
-                    className={`flex-1 ${isSelected ? "text-accent-900 font-medium" : "text-gray-700"}`}
+                  <Label
+                    htmlFor={`option-${value}`}
+                    className={`
+                      flex items-center space-x-3 p-4 rounded-lg border-2 cursor-pointer
+                      transition-all duration-200
+                      ${
+                        isSelected
+                          ? "border-accent-500 bg-accent-50"
+                          : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                      }
+                    `}
                   >
-                    {option}
-                  </span>
-                </Label>
-              </motion.div>
-            );
-          })}
-        </RadioGroup>
+                    <RadioGroupItem
+                      value={value.toString()}
+                      id={`option-${value}`}
+                      className="flex-shrink-0"
+                    />
+                    <span
+                      className={`flex-1 ${isSelected ? "text-accent-900 font-medium" : "text-gray-700"}`}
+                    >
+                      {option}
+                    </span>
+                  </Label>
+                </motion.div>
+              );
+            })}
+          </RadioGroup>
 
-        {/* Navigation */}
-        <div className="flex justify-between items-center pt-4 border-t">
-          <Button
-            variant="outline"
-            onClick={onPrevious}
-            disabled={!canGoPrevious}
-            className="flex items-center gap-2"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Previous
-          </Button>
+          {/* Navigation */}
+          <div className="flex justify-between items-center pt-4 border-t">
+            <Button
+              variant="outline"
+              onClick={onPrevious}
+              disabled={!canGoPrevious}
+              className="flex items-center gap-2"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </Button>
 
-          <span className="text-sm text-gray-500">
-            {selectedValue !== undefined
-              ? "✓ Answered"
-              : "Please select an answer"}
-          </span>
+            <span className="text-sm text-gray-500">
+              {selectedValue !== undefined
+                ? "✓ Answered"
+                : "Please select an answer"}
+            </span>
 
-          <Button
-            onClick={onNext}
-            disabled={!canGoNext}
-            className="flex items-center gap-2 bg-primary text-white hover:bg-primary/90"
-          >
-            {isLastQuestion ? "Complete" : "Next"}
-            {!isLastQuestion && <ChevronRight className="h-4 w-4" />}
-          </Button>
-        </div>
-      </motion.div>
+            <Button
+              onClick={onNext}
+              disabled={!canGoNext}
+              className="flex items-center gap-2 bg-primary text-white hover:bg-primary/90"
+            >
+              {isLastQuestion ? "Complete" : "Next"}
+              {!isLastQuestion && <ChevronRight className="h-4 w-4" />}
+            </Button>
+          </div>
+        </motion.div>
+      </AnimatePresence>
 
       {/* Instructions */}
       <div className="text-center text-sm text-gray-500">

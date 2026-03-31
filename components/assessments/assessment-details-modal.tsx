@@ -38,8 +38,59 @@ export function AssessmentDetailsModal({
   }
   const IconComponent = iconMap[config.iconName] || Brain
 
-  // Placeholder evidence links - these should come from assessment metadata in future
-  const evidenceLinks = [
+  // Evidence and clinical links specifically for each assessment
+  const evidenceLinksMap: Record<string, Array<{title: string; url: string; description: string}>> = {
+    phq9: [
+      {
+        title: 'NHS Approved Assessment',
+        url: 'https://www.phqscreeners.com/select-screener/36',
+        description: 'Validated for use in UK clinical settings'
+      },
+      {
+        title: 'Clinical Validation Study',
+        url: 'https://pubmed.ncbi.nlm.nih.gov/11556941/',
+        description: 'Peer-reviewed research supporting this tool'
+      }
+    ],
+    gad7: [
+      {
+        title: 'NHS Approved Assessment',
+        url: 'https://cks.nice.org.uk/topics/generalized-anxiety-disorder/diagnosis/generalized-anxiety-disorder-questionnaire/',
+        description: 'Validated for use in UK clinical settings'
+      },
+      {
+        title: 'Clinical Validation Study',
+        url: 'https://pubmed.ncbi.nlm.nih.gov/16717171/',
+        description: 'Peer-reviewed research supporting this tool'
+      }
+    ],
+    asrs: [
+      {
+        title: 'NHS Approved Assessment',
+        url: 'https://add.org/wp-content/uploads/2015/03/adhd-questionnaire-ASRS111.pdf',
+        description: 'Validated for use in UK clinical settings'
+      },
+      {
+        title: 'Clinical Validation Study',
+        url: 'https://pubmed.ncbi.nlm.nih.gov/15841682/',
+        description: 'Peer-reviewed research supporting this tool'
+      }
+    ],
+    dass21: [
+      {
+        title: 'NHS Approved Assessment',
+        url: 'https://www2.psy.unsw.edu.au/dass/',
+        description: 'Validated for use in UK clinical settings'
+      },
+      {
+        title: 'Clinical Validation Study',
+        url: 'https://pubmed.ncbi.nlm.nih.gov/7726811/',
+        description: 'Peer-reviewed research supporting this tool'
+      }
+    ]
+  }
+
+  const evidenceLinks = evidenceLinksMap[assessment.type] || [
     {
       title: 'NHS Approved Assessment',
       url: '#',

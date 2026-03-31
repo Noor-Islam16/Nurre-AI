@@ -32,6 +32,9 @@ interface AssessmentStore {
 
 const assessmentService = new AssessmentService();
 
+// Small helper — waits ms milliseconds (used for retry back-off)
+const delay = (ms: number) => new Promise<void>((res) => setTimeout(res, ms));
+
 export const useAssessmentStore = create<AssessmentStore>()(
   persist(
     (set, get) => ({
@@ -185,26 +188,36 @@ export const useAssessmentStore = create<AssessmentStore>()(
         const user = useUserStore.getState().user;
         if (!user) return null;
 
-        try {
-          const response = await assessmentService.completeAssessment(
-            user.id,
-            state.assessment,
-            state.responses,
-            state.startTime,
-          );
-
-          if (response) {
-            set((prev) => ({
-              assessmentHistory: [response, ...prev.assessmentHistory],
-            }));
-            get().clearCurrentAssessment();
+        // ── Retry up to 3 times ──────────────────────────────────────────
+        // On Supabase Free the pooled connection can return a transient error
+        // on the INSERT — a short retry makes results reliably appear.
+        let response: import("@/lib/types/assessment").AssessmentResponse | null = null;
+        let attempts = 0;
+        while (!response && attempts < 3) {
+          attempts++;
+          try {
+            response = await assessmentService.completeAssessment(
+              user.id,
+              state.assessment,
+              state.responses,
+              state.startTime,
+            );
+          } catch (err) {
+            console.error(`[Assessment] attempt ${attempts} failed:`, err);
           }
-
-          return response;
-        } catch (error) {
-          console.error("[Assessment] Error completing assessment:", error);
-          return null;
+          if (!response && attempts < 3) {
+            await delay(1000 * attempts); // 1s, 2s back-off
+          }
         }
+
+        if (response) {
+          set((prev) => ({
+            assessmentHistory: [response!, ...prev.assessmentHistory],
+          }));
+          get().clearCurrentAssessment();
+        }
+
+        return response;
       },
 
       clearCurrentAssessment: async () => {

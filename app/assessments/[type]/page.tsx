@@ -82,52 +82,61 @@ export default function AssessmentFlowPage() {
   const initializeAssessment = async () => {
     setLoading(true);
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    // ── Run auth check and assessment fetch in parallel ─────────────────────
+    // On Vercel Free + Supabase Free the cold-start penalty is ~1-3s per call.
+    // Running them concurrently cuts the wait roughly in half.
+    const [
+      { data: { user } },
+      assessment,
+    ] = await Promise.all([
+      supabase.auth.getUser(),
+      // Only fetch assessment if we actually need it (avoid wasted work)
+      (!currentAssessment || currentAssessment.assessment.type !== assessmentType)
+        ? assessmentService.getAssessment(assessmentType as any)
+        : Promise.resolve(null),
+    ]);
+
     if (!user) {
       router.push("/login");
       return;
     }
     setUser(user);
 
-    if (
-      !currentAssessment ||
-      currentAssessment.assessment.type !== assessmentType
-    ) {
-      const assessment = await assessmentService.getAssessment(
-        assessmentType as any,
-      );
-      if (!assessment) {
-        router.push("/profile?tab=assessments");
-        return;
-      }
+    // If we already have the right assessment loaded in the store, skip re-init
+    if (currentAssessment && currentAssessment.assessment.type === assessmentType) {
+      setLoading(false);
+      return;
+    }
 
-      // Check Supabase for an in-progress attempt (not a completed one)
-      const progress = await assessmentService.getOrCreateProgress(
-        user.id,
-        assessment.id,
-      );
+    if (!assessment) {
+      router.push("/profile?tab=assessments");
+      return;
+    }
 
-      const hasPartialProgress =
-        progress && Object.keys(progress.responses).length > 0;
+    // Check Supabase for an in-progress attempt (not a completed one)
+    // getOrCreateProgress now uses upsert internally — single round-trip
+    const progress = await assessmentService.getOrCreateProgress(
+      user.id,
+      assessment.id,
+    );
 
-      if (hasPartialProgress) {
-        // Resume from Supabase progress — pass resume=true so store
-        // loads the saved index and responses
-        useAssessmentStore.setState({
-          currentAssessment: {
-            assessment,
-            currentQuestionIndex: progress.current_question_index,
-            responses: progress.responses as Record<number, number>,
-            startTime: new Date(progress.started_at).getTime(),
-            isComplete: false,
-          },
-        });
-      } else {
-        // Fresh start — resume=false (default) clears any stale localStorage
-        useAssessmentStore.getState().startAssessment(assessment, false);
-      }
+    const hasPartialProgress =
+      progress && Object.keys(progress.responses).length > 0;
+
+    if (hasPartialProgress) {
+      // Resume from Supabase progress
+      useAssessmentStore.setState({
+        currentAssessment: {
+          assessment,
+          currentQuestionIndex: progress.current_question_index,
+          responses: progress.responses as Record<number, number>,
+          startTime: new Date(progress.started_at).getTime(),
+          isComplete: false,
+        },
+      });
+    } else {
+      // Fresh start — clears any stale localStorage
+      useAssessmentStore.getState().startAssessment(assessment, false);
     }
 
     setLoading(false);

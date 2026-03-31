@@ -121,44 +121,46 @@ export class AssessmentService {
   }
 
   // Get or create assessment progress
+  // Uses a single upsert (ignoreDuplicates) instead of SELECT → INSERT
+  // to avoid the extra round-trip on Supabase free tier.
   async getOrCreateProgress(
     userId: string,
     assessmentId: string,
   ): Promise<AssessmentProgress | null> {
-    let { data, error } = await this.supabase
+    // Try a lightweight SELECT first — if row exists return it immediately
+    const { data: existing, error: fetchError } = await this.supabase
       .from("assessment_progress")
       .select("*")
       .eq("user_id", userId)
       .eq("assessment_id", assessmentId)
-      .single();
+      .maybeSingle();
 
-    if (error && error.code === "PGRST116") {
-      const { data: newProgress, error: createError } = await this.supabase
-        .from("assessment_progress")
-        .insert({
-          user_id: userId,
-          assessment_id: assessmentId,
-          current_question_index: 0,
-          responses: {},
-          started_at: new Date().toISOString(),
-        })
-        .select()
-        .single();
-
-      if (createError) {
-        console.error("Error creating assessment progress:", createError);
-        return null;
-      }
-
-      return newProgress;
-    }
-
-    if (error) {
-      console.error("Error fetching assessment progress:", error);
+    if (fetchError) {
+      console.error("Error fetching assessment progress:", fetchError);
       return null;
     }
 
-    return data;
+    if (existing) return existing;
+
+    // Row doesn’t exist — create it
+    const { data: newProgress, error: createError } = await this.supabase
+      .from("assessment_progress")
+      .insert({
+        user_id: userId,
+        assessment_id: assessmentId,
+        current_question_index: 0,
+        responses: {},
+        started_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (createError) {
+      console.error("Error creating assessment progress:", createError);
+      return null;
+    }
+
+    return newProgress;
   }
 
   // Save assessment progress

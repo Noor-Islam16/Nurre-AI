@@ -308,13 +308,22 @@ function AvatarSkeleton() {
   )
 }
 
-// Error state
+// Error state - shows a friendly placeholder instead of an error message
 function AvatarError({ error }: { error: string }) {
   return (
-    <div className="w-full h-full flex items-center justify-center bg-red-50 rounded-full">
-      <div className="text-center p-4">
-        <p className="text-red-500 text-xs">Avatar Error</p>
-        <p className="text-red-400 text-xs mt-1">{error}</p>
+    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-violet-100 to-fuchsia-50 rounded-full">
+      <div className="text-center flex flex-col items-center gap-2">
+        {/* Silhouette placeholder */}
+        <svg
+          viewBox="0 0 64 64"
+          className="w-1/2 h-1/2 text-violet-300"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <circle cx="32" cy="22" r="12" />
+          <path d="M8 56c0-13.3 10.7-24 24-24s24 10.7 24 24H8z" />
+        </svg>
+        <span className="text-violet-400 text-xs sr-only">{error}</span>
       </div>
     </div>
   )
@@ -338,12 +347,16 @@ export function NureeAvatar({
   onClick
 }: NureeAvatarProps) {
   const [error, setError] = useState<string | null>(null)
-  const [useFallback, setUseFallback] = useState(false)
+  // Default to fallback (self-hosted) URLs — Ready Player Me remote URLs are unreliable
+  const [useFallback, setUseFallback] = useState(true)
+  // Key to force remount of Canvas when switching fallback
+  const [canvasKey, setCanvasKey] = useState(0)
 
-  // Get the avatar URL for the selected personality, with self-hosted fallback
+  // Get the avatar URL for the selected personality
   const avatarUrl = useMemo(() => {
     const config = getPersonality(personality)
-    return useFallback ? config.fallbackAvatarUrl : config.avatarUrl
+    // Always prefer self-hosted local GLB files for reliability
+    return config.fallbackAvatarUrl
   }, [personality, useFallback])
 
   if (error) {
@@ -361,11 +374,17 @@ export function NureeAvatar({
       style={{ ...style, cursor: onClick ? 'pointer' : 'default' }}
     >
       <AvatarErrorBoundary
+        key={`avatar-boundary-${canvasKey}`}
         fallback={<AvatarError error="Failed to load 3D avatar" />}
         onError={() => {
-          if (!useFallback) {
-            console.warn('[NureeAvatar] Remote avatar failed, switching to self-hosted fallback')
+          console.warn('[NureeAvatar] Avatar failed to load, attempting recovery...')
+          // If already on fallback and still failing, show error state
+          if (useFallback) {
+            setError('Avatar failed to load')
+          } else {
+            // Switch to fallback and remount canvas
             setUseFallback(true)
+            setCanvasKey(k => k + 1)
           }
         }}
       >
@@ -389,11 +408,7 @@ export function NureeAvatar({
             }}
             onError={(e) => {
               console.error('[NureeAvatar] Canvas error:', e)
-              if (!useFallback) {
-                setUseFallback(true)
-              } else {
-                setError('Canvas error')
-              }
+              setError('Canvas failed to initialize')
             }}
           >
             {/* Lighting */}
@@ -424,11 +439,10 @@ export function NureeAvatar({
   )
 }
 
-// Preload all personality avatars for faster switching
-// This runs at module load time
+// Preload all self-hosted personality avatars for faster switching
+// Only preload local fallback URLs — remote URLs may be expired/invalid
 if (typeof window !== 'undefined') {
   getPersonalityList().forEach(p => {
-    useGLTF.preload(p.avatarUrl)
     useGLTF.preload(p.fallbackAvatarUrl)
   })
 }

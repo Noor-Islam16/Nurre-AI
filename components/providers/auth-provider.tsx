@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useUserStore } from '@/store/user-store'
+import { useOnlineSync } from '@/hooks/use-online-sync'
 
 interface AuthProviderProps {
   children: React.ReactNode
@@ -17,6 +18,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const initialize = useUserStore(state => state.initialize)
   const isInitialized = useUserStore(state => state.isInitialized)
   const [mounted, setMounted] = useState(false)
+
+  // Background sync: push any pending offline assessment results to Supabase
+  // the moment the browser reports network connectivity.
+  useOnlineSync()
 
   useEffect(() => {
     setMounted(true)

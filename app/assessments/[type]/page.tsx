@@ -16,8 +16,8 @@ import {
   ASSESSMENT_CONFIG,
   isValidAssessmentType,
 } from "@/lib/types/assessment";
-import type { Assessment } from "@/lib/types/assessment";
-import { ArrowLeft, AlertCircle, Clock, Save, CheckCircle } from "lucide-react";
+import type { Assessment, AssessmentResult } from "@/lib/types/assessment";
+import { ArrowLeft, AlertCircle, Clock, Save, WifiOff } from "lucide-react";
 
 export default function AssessmentFlowPage() {
   const router = useRouter();
@@ -38,8 +38,9 @@ export default function AssessmentFlowPage() {
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<AssessmentResult | null>(null);
   const [showResult, setShowResult] = useState(false);
+  const [isOfflineResult, setIsOfflineResult] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [autoSaveTimer, setAutoSaveTimer] = useState<NodeJS.Timeout | null>(
     null,
@@ -209,18 +210,47 @@ export default function AssessmentFlowPage() {
       try {
         // Call completeAssessment via getState() so it always reads the
         // freshest Zustand state (isComplete:true set just above).
-        // The stale-closure version from the component destructure may still
-        // see isComplete:false on slower devices, causing it to return null.
+        // completeAssessment now ALWAYS returns a response — either from
+        // Supabase (3 retries) or from the local offline fallback.
         const response = await useAssessmentStore.getState().completeAssessment();
+
         if (response && snapshotAssessment) {
-          const assessmentResult = await assessmentService.getAssessmentResult(
-            snapshotAssessment,
-            response,
-          );
+          const offline = !!(response as any)._offline;
+          setIsOfflineResult(offline);
+
+          let assessmentResult: AssessmentResult;
+          try {
+            // Try to enrich with previous-comparison data from the backend.
+            // This call may also fail when offline — we catch and build locally.
+            assessmentResult = await assessmentService.getAssessmentResult(
+              snapshotAssessment,
+              response,
+            );
+          } catch {
+            // Still offline — build the result object locally with no comparison
+            assessmentResult = {
+              assessment: snapshotAssessment,
+              response,
+              interpretation: assessmentService.getInterpretation(
+                snapshotAssessment,
+                response.scores,
+              ),
+              subscale_interpretations: assessmentService.getSubscaleInterpretations(
+                snapshotAssessment,
+                response.scores,
+              ),
+              comparison_to_previous: undefined,
+            };
+          }
+
           setResult(assessmentResult);
           setShowResult(true);
         } else {
-          setSubmitError("Failed to submit assessment results. Please check your connection and try again.");
+          // Should not happen any more — completeAssessment always returns
+          // something — but keep as a last-resort safety net.
+          setSubmitError(
+            "Failed to generate assessment results. Please try again.",
+          );
         }
       } catch (error) {
         console.error("Error completing assessment:", error);
@@ -310,6 +340,24 @@ export default function AssessmentFlowPage() {
   if (showResult && result) {
     return (
       <div className="container mx-auto px-4 py-8">
+        {/* Offline result banner — shown when Supabase was unreachable */}
+        {isOfflineResult && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-4"
+          >
+            <Alert className="border-amber-300 bg-amber-50">
+              <WifiOff className="h-4 w-4 text-amber-600" />
+              <AlertDescription className="text-amber-800 text-sm">
+                <span className="font-semibold">Saved locally</span> — your
+                result was calculated on your device and will automatically sync
+                to your account when your connection is restored. Your score is
+                accurate.
+              </AlertDescription>
+            </Alert>
+          </motion.div>
+        )}
         <AssessmentResults
           result={result}
           onRetake={handleRetake}

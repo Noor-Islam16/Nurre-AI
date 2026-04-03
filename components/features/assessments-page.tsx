@@ -28,10 +28,11 @@ import {
 import { useAssessmentStore } from "@/store/assessment-store";
 import { useMoodStore } from "@/store/mood-store";
 import { createClient } from "@/lib/supabase/client";
-import { Brain, FileText, AlertCircle } from "lucide-react";
+import { Brain, FileText, AlertCircle, WifiOff } from "lucide-react";
 import { AssessmentService } from "@/lib/services/assessment-service";
 import type { AssessmentResponse, Assessment } from "@/lib/types/assessment";
 import { ASSESSMENT_CONFIG } from "@/lib/types/assessment";
+import { getPendingOfflineResults, toAssessmentResponse } from "@/lib/utils/offline-results";
 
 export function AssessmentsPageComponent() {
   const router = useRouter();
@@ -46,6 +47,7 @@ export function AssessmentsPageComponent() {
     startAssessment,
     fetchAssessments,
     fetchUserHistory,
+    syncOfflineResults,
   } = useAssessmentStore();
 
   const { recentMoods, fetchRecentMoods } = useMoodStore();
@@ -104,6 +106,33 @@ export function AssessmentsPageComponent() {
       await fetchRecentMoods();
     } catch (error) {
       console.error("Failed to fetch moods:", error);
+    }
+
+    // ── Offline result merge + background sync ──────────────────────
+    // Merge any locally-stored offline results into history immediately so
+    // the My Results tab is populated before the sync attempt resolves.
+    try {
+      const pending = getPendingOfflineResults();
+      if (pending.length > 0) {
+        const storeHistory = useAssessmentStore.getState().assessmentHistory;
+        const existingIds = new Set(storeHistory.map((r) => r.id));
+        const newOffline = pending
+          .map(toAssessmentResponse)
+          .filter((r) => !existingIds.has(r.id));
+        if (newOffline.length > 0) {
+          useAssessmentStore.setState((prev) => ({
+            assessmentHistory: [...newOffline, ...prev.assessmentHistory],
+          }));
+        }
+
+        // Attempt background sync — silently upgrades "offline" entries to
+        // real Supabase records when the connection is available.
+        syncOfflineResults().catch(() => {
+          // swallow — will retry next time
+        });
+      }
+    } catch (err) {
+      console.warn("[AssessmentsPage] Offline merge error:", err);
     }
   };
 
@@ -484,68 +513,86 @@ export function AssessmentsPageComponent() {
               </CardContent>
             </Card>
           ) : (
-            <ResultsList
-              items={(() => {
-                const grouped = new Map<string, AssessmentResponse[]>();
-                for (const response of assessmentHistory) {
-                  const assessment = assessments.find(
-                    (a) => a.id === response.assessment_id,
-                  );
-                  if (!assessment) continue;
-                  if (!grouped.has(assessment.type))
-                    grouped.set(assessment.type, []);
-                  grouped.get(assessment.type)!.push(response);
-                }
+            <>
+              {/* Offline pending banner */}
+              {assessmentHistory.some((r) => (r as any)._offline) && (
+                <motion.div
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mb-4"
+                >
+                  <Alert className="border-amber-300 bg-amber-50 py-2">
+                    <WifiOff className="h-3.5 w-3.5 text-amber-600 flex-shrink-0" />
+                    <AlertDescription className="text-amber-800 text-xs leading-tight">
+                      Some results are saved locally and will sync to your
+                      account automatically when your connection is restored.
+                    </AlertDescription>
+                  </Alert>
+                </motion.div>
+              )}
+              <ResultsList
+                items={(() => {
+                  const grouped = new Map<string, AssessmentResponse[]>();
+                  for (const response of assessmentHistory) {
+                    const assessment = assessments.find(
+                      (a) => a.id === response.assessment_id,
+                    );
+                    if (!assessment) continue;
+                    if (!grouped.has(assessment.type))
+                      grouped.set(assessment.type, []);
+                    grouped.get(assessment.type)!.push(response);
+                  }
 
-                const items: Array<{
-                  assessment: Assessment;
-                  lastResponse: AssessmentResponse;
-                  history: AssessmentResponse[];
-                }> = [];
+                  const items: Array<{
+                    assessment: Assessment;
+                    lastResponse: AssessmentResponse;
+                    history: AssessmentResponse[];
+                  }> = [];
 
-                for (const [type, responses] of grouped.entries()) {
-                  const assessment = assessments.find((a) => a.type === type);
-                  if (!assessment) continue;
-                  const sorted = responses.sort(
+                  for (const [type, responses] of grouped.entries()) {
+                    const assessment = assessments.find((a) => a.type === type);
+                    if (!assessment) continue;
+                    const sorted = responses.sort(
+                      (a, b) =>
+                        new Date(b.completed_at).getTime() -
+                        new Date(a.completed_at).getTime(),
+                    );
+                    items.push({
+                      assessment,
+                      lastResponse: sorted[0],
+                      history: sorted,
+                    });
+                  }
+
+                  return items.sort(
                     (a, b) =>
-                      new Date(b.completed_at).getTime() -
-                      new Date(a.completed_at).getTime(),
+                      new Date(b.lastResponse.completed_at).getTime() -
+                      new Date(a.lastResponse.completed_at).getTime(),
                   );
-                  items.push({
-                    assessment,
-                    lastResponse: sorted[0],
-                    history: sorted,
-                  });
+                })()}
+                onShare={(item) =>
+                  shareWithGP({
+                    assessment: item.assessment,
+                    lastResponse: item.lastResponse,
+                    history: item.history,
+                  })
                 }
-
-                return items.sort(
-                  (a, b) =>
-                    new Date(b.lastResponse.completed_at).getTime() -
-                    new Date(a.lastResponse.completed_at).getTime(),
-                );
-              })()}
-              onShare={(item) =>
-                shareWithGP({
-                  assessment: item.assessment,
-                  lastResponse: item.lastResponse,
-                  history: item.history,
-                })
-              }
-              onExportPDF={(item) =>
-                exportAsPDF({
-                  assessment: item.assessment,
-                  lastResponse: item.lastResponse,
-                  history: item.history,
-                })
-              }
-              onExportCSV={(item) =>
-                exportAsCSV({
-                  assessment: item.assessment,
-                  lastResponse: item.lastResponse,
-                  history: item.history,
-                })
-              }
-            />
+                onExportPDF={(item) =>
+                  exportAsPDF({
+                    assessment: item.assessment,
+                    lastResponse: item.lastResponse,
+                    history: item.history,
+                  })
+                }
+                onExportCSV={(item) =>
+                  exportAsCSV({
+                    assessment: item.assessment,
+                    lastResponse: item.lastResponse,
+                    history: item.history,
+                  })
+                }
+              />
+            </>
           )}
         </TabsContent>
 

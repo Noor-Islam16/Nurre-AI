@@ -9,6 +9,14 @@ import type {
   AssessmentStats,
   AssessmentResult,
 } from "@/lib/types/assessment";
+import {
+  type OfflineResult,
+  saveOfflineResult,
+  getPendingOfflineResults,
+  removeOfflineResult,
+  generateOfflineId,
+  toAssessmentResponse,
+} from "@/lib/utils/offline-results";
 
 export class AssessmentService {
   private supabase = createClient();
@@ -236,6 +244,97 @@ export class AssessmentService {
       .delete()
       .eq("user_id", userId)
       .eq("assessment_id", assessmentId);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // completeAssessmentOffline
+  //
+  // Calculates scores locally (identical logic to completeAssessment) and
+  // persists the result to localStorage.  Used as a fallback when the
+  // Supabase INSERT fails after all retries — guarantees the user always
+  // sees their result and it appears in the My Results tab.
+  // Returns a fully-shaped AssessmentResponse (with _offline:true sentinel).
+  // ─────────────────────────────────────────────────────────────────────────
+  completeAssessmentOffline(
+    userId: string,
+    assessment: Assessment,
+    responses: Record<number, number>,
+    startTime: number,
+  ): AssessmentResponse & { _offline: true } {
+    const scores = this.calculateScores(assessment, responses);
+    const interpretation = this.getInterpretation(assessment, scores);
+    const now = new Date().toISOString();
+    const timeTaken = Math.floor((Date.now() - startTime) / 1000);
+
+    const offlineResult: OfflineResult = {
+      id: generateOfflineId(),
+      user_id: userId,
+      assessment_id: assessment.id,
+      assessment_type: assessment.type,
+      responses,
+      scores,
+      severity_level: interpretation.level,
+      time_taken: timeTaken,
+      started_at: new Date(startTime).toISOString(),
+      completed_at: now,
+      is_complete: true,
+      shared_with_provider: false,
+      created_at: now,
+      updated_at: now,
+      _offline: true,
+    };
+
+    saveOfflineResult(offlineResult);
+    console.info("[Assessment] Result saved offline — will sync when connected.", offlineResult.id);
+
+    return toAssessmentResponse(offlineResult);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // syncPendingOfflineResults
+  //
+  // Attempts to push every pending offline result to Supabase.  Removes each
+  // entry from localStorage on success.  Returns the list of successfully
+  // synced responses (so the caller can update the in-memory store).
+  // ─────────────────────────────────────────────────────────────────────────
+  async syncPendingOfflineResults(): Promise<(AssessmentResponse & { _offline: true })[]> {
+    const pending = getPendingOfflineResults();
+    if (pending.length === 0) return [];
+
+    const synced: (AssessmentResponse & { _offline: true })[] = [];
+
+    for (const result of pending) {
+      try {
+        const { data, error } = await this.supabase
+          .from("assessment_responses")
+          .insert({
+            user_id: result.user_id,
+            assessment_id: result.assessment_id,
+            assessment_type: result.assessment_type,
+            responses: result.responses,
+            scores: result.scores,
+            severity_level: result.severity_level,
+            time_taken: result.time_taken,
+            started_at: result.started_at,
+            completed_at: result.completed_at,
+            is_complete: true,
+          })
+          .select()
+          .single();
+
+        if (!error && data) {
+          removeOfflineResult(result.id);
+          // Return the server-assigned record (without _offline flag)
+          synced.push(data as AssessmentResponse & { _offline: true });
+          console.info("[Assessment] Offline result synced to backend:", data.id);
+        }
+      } catch (err) {
+        // Network still down — leave in localStorage, try again later
+        console.warn("[Assessment] Sync attempt failed for", result.id, err);
+      }
+    }
+
+    return synced;
   }
 
   // ─────────────────────────────────────────────────────────────────────────

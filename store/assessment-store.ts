@@ -10,6 +10,7 @@ import type {
 } from "@/lib/types/assessment";
 import { AssessmentService } from "@/lib/services/assessment-service";
 import { useUserStore } from "./user-store";
+import { getPendingOfflineResults, toAssessmentResponse } from "@/lib/utils/offline-results";
 
 interface AssessmentStore {
   assessments: Assessment[];
@@ -28,6 +29,7 @@ interface AssessmentStore {
   clearCurrentAssessment: () => Promise<void>;
   fetchUserHistory: (userId: string) => Promise<void>;
   fetchAssessmentStats: (userId: string, type: AssessmentType) => Promise<void>;
+  syncOfflineResults: () => Promise<void>;
 }
 
 const assessmentService = new AssessmentService();
@@ -203,7 +205,10 @@ export const useAssessmentStore = create<AssessmentStore>()(
         // ── Retry up to 3 times ──────────────────────────────────────────
         // On Supabase Free the pooled connection can return a transient error
         // on the INSERT — a short retry makes results reliably appear.
+        // We also handle network-level errors (TypeError: Failed to fetch)
+        // the same way so flaky mobile / client connections are covered.
         let response: import("@/lib/types/assessment").AssessmentResponse | null = null;
+        let lastErr: unknown = null;
         let attempts = 0;
         while (!response && attempts < 3) {
           attempts++;
@@ -215,6 +220,7 @@ export const useAssessmentStore = create<AssessmentStore>()(
               state.startTime,
             );
           } catch (err) {
+            lastErr = err;
             console.error(`[Assessment] attempt ${attempts} failed:`, err);
           }
           if (!response && attempts < 3) {
@@ -227,9 +233,28 @@ export const useAssessmentStore = create<AssessmentStore>()(
             assessmentHistory: [response!, ...prev.assessmentHistory],
           }));
           get().clearCurrentAssessment();
+          return response;
         }
 
-        return response;
+        // ── All retries failed — fall back to offline calculation ────────
+        // The user MUST see their result. We compute it locally using the
+        // exact same scoring logic and persist it to localStorage so it
+        // survives a page refresh and shows in the My Results tab.
+        console.warn(
+          "[Assessment] All network attempts failed. Saving result offline.",
+          lastErr,
+        );
+        const offlineResponse = assessmentService.completeAssessmentOffline(
+          user.id,
+          state.assessment,
+          state.responses,
+          state.startTime,
+        );
+        set((prev) => ({
+          assessmentHistory: [offlineResponse, ...prev.assessmentHistory],
+        }));
+        get().clearCurrentAssessment();
+        return offlineResponse;
       },
 
       clearCurrentAssessment: async () => {
@@ -277,11 +302,50 @@ export const useAssessmentStore = create<AssessmentStore>()(
           console.error("Error fetching assessment stats:", error);
         }
       },
+
+      syncOfflineResults: async () => {
+        try {
+          const synced = await assessmentService.syncPendingOfflineResults();
+          if (synced.length > 0) {
+            // Replace offline versions in the history with the server records
+            set((prev) => {
+              const withoutOld = prev.assessmentHistory.filter(
+                (r) => !(r as any)._offline ||
+                  !synced.find((s) => s.assessment_type === (r as any).assessment_type &&
+                    s.user_id === (r as any).user_id)
+              );
+              return { assessmentHistory: [...synced, ...withoutOld] };
+            });
+            console.info(`[Assessment] Synced ${synced.length} offline result(s) to backend.`);
+          }
+        } catch (err) {
+          console.warn("[Assessment] syncOfflineResults error:", err);
+        }
+      },
     }),
     {
       name: "assessment-storage",
+      // On rehydration from localStorage, merge any persisted offline history
+      // back into the live assessmentHistory so the My Results tab is
+      // populated even before the backend responds.
+      merge: (persisted: any, current) => {
+        const offlineHistory: AssessmentResponse[] = persisted?.offlineHistory ?? [];
+        const pendingFromStorage = getPendingOfflineResults().map(toAssessmentResponse);
+
+        // Build a de-duped set: pending localStorage + persisted offline store entries
+        const offlineById = new Map<string, AssessmentResponse>();
+        [...offlineHistory, ...pendingFromStorage].forEach((r) => offlineById.set(r.id, r));
+
+        return {
+          ...current,
+          currentAssessment: persisted?.currentAssessment ?? current.currentAssessment,
+          assessmentHistory: [...offlineById.values()],
+        };
+      },
       partialize: (state) => ({
         currentAssessment: state.currentAssessment,
+        // Only persist offline-flagged entries (server records are fetched fresh)
+        offlineHistory: state.assessmentHistory.filter((r) => (r as any)._offline),
       }),
     },
   ),

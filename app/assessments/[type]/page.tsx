@@ -10,6 +10,7 @@ import { AssessmentQuestionComponent } from "@/components/assessments/assessment
 import { AssessmentResults } from "@/components/assessments/assessment-results";
 import { SafetyInterstitialModal } from "@/components/assessments/safety-interstitial-modal";
 import { useAssessmentStore } from "@/store/assessment-store";
+import { useUserStore } from "@/store/user-store";
 import { createClient } from "@/lib/supabase/client";
 import { AssessmentService } from "@/lib/services/assessment-service";
 import {
@@ -86,42 +87,52 @@ export default function AssessmentFlowPage() {
     setSubmitError(null);
 
     try {
-      // ── Run auth check and assessment fetch in parallel ─────────────────────
-      // On Vercel Free + Supabase Free the cold-start penalty is ~1-3s per call.
-      // Running them concurrently cuts the wait roughly in half.
-      const [
-        { data: { user } },
-        assessment,
-      ] = await Promise.all([
-        supabase.auth.getUser(),
-        // Only fetch assessment if we actually need it (avoid wasted work)
-        (!currentAssessment || currentAssessment.assessment.type !== assessmentType)
-          ? assessmentService.getAssessment(assessmentType as any)
-          : Promise.resolve(null),
-      ]);
+      // 1. Get user from store first to avoid unnecessary network calls
+      let currentUser = useUserStore.getState().user;
+      
+      if (!currentUser) {
+        // Fallback to fetch with a timeout so it never hangs indefinitely
+        const fetchUserPromise = supabase.auth.getUser().then(({ data }) => data.user);
+        currentUser = await Promise.race([
+          fetchUserPromise,
+          new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Auth Timeout")), 5000))
+        ]).catch(() => null);
+      }
 
-      if (!user) {
+      if (!currentUser) {
         router.push("/login");
         return;
       }
-      setUser(user);
+      setUser(currentUser);
 
-      // If we already have the right assessment loaded in the store, skip re-init
+      // 2. Fast-path: If we ALREADY have the right assessment loaded in the store
+      // (because the user just clicked "Start Assessment" and it was set synchronously),
+      // we can skip all further initialization and render immediately.
       if (currentAssessment && currentAssessment.assessment.type === assessmentType) {
         return;
       }
+
+      // 3. Otherwise, fetch the assessment details (with timeout)
+      const fetchAssessmentPromise = assessmentService.getAssessment(assessmentType as any);
+      const assessment = await Promise.race([
+        fetchAssessmentPromise,
+        new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Assessment Timeout")), 5000))
+      ]).catch((err) => {
+        console.error("Timeout fetching assessment:", err);
+        return null;
+      });
 
       if (!assessment) {
         router.push("/profile?tab=assessments");
         return;
       }
 
-      // Check Supabase for an in-progress attempt (not a completed one)
-      // getOrCreateProgress now uses upsert internally — single round-trip
-      const progress = await assessmentService.getOrCreateProgress(
-        user.id,
-        assessment.id,
-      );
+      // 4. Check Supabase for an in-progress attempt (also with a short timeout)
+      // If it fails or times out, we just fallback to a fresh start
+      const progress = await Promise.race([
+        assessmentService.getOrCreateProgress(currentUser.id, assessment.id),
+        new Promise<any>((resolve) => setTimeout(() => resolve(null), 3000))
+      ]).catch(() => null);
 
       const hasPartialProgress =
         progress && Object.keys(progress.responses).length > 0;

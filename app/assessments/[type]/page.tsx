@@ -194,50 +194,77 @@ export default function AssessmentFlowPage() {
       currentAssessment.assessment.questions.length - 1;
 
     if (currentAssessment.isComplete || isLastQuestion) {
-      // Always snapshot the assessment BEFORE any state mutations
+      // ── Snapshot ALL data we need BEFORE any state mutations or async work ──
+      // React closures + Zustand state can diverge on slow/flaky devices.
+      // By capturing everything here we guarantee we always have what we need
+      // to render a result, even if the store gets cleared mid-flight.
       const snapshotAssessment =
         assessmentRef.current ?? currentAssessment.assessment;
+      const snapshotResponses = { ...currentAssessment.responses };
+      const snapshotStartTime = currentAssessment.startTime;
+      const snapshotUser = user; // from page-level useState
 
       if (!currentAssessment.isComplete) {
-        // Mark as complete in the store synchronously via getState() —
-        // avoids relying on the React-closure-bound nextQuestion which may
-        // have captured a stale reference before this render cycle.
         useAssessmentStore.getState().nextQuestion();
       }
 
       setSubmitError(null);
       setCompleting(true);
       try {
-        // Call completeAssessment via getState() so it always reads the
-        // freshest Zustand state (isComplete:true set just above).
-        // completeAssessment now ALWAYS returns a response — either from
-        // Supabase (3 retries) or from the local offline fallback.
         const response = await useAssessmentStore.getState().completeAssessment();
 
-        if (response && snapshotAssessment) {
-          const offline = !!(response as any)._offline;
-          setIsOfflineResult(offline);
+        // Determine the final response to render.
+        // completeAssessment() can still return null when its internal guards
+        // fire (e.g. store already cleared, userStore not yet hydrated).
+        // In that case we compute the result right here using the snapshot data
+        // captured above — this is the definitive last-resort guarantee.
+        let finalResponse = response;
+        let isOffline = !!(response as any)?._offline;
+
+        if (!finalResponse && snapshotAssessment && snapshotUser &&
+            Object.keys(snapshotResponses).length > 0) {
+          console.warn(
+            "[Assessment] completeAssessment returned null — using page-level snapshot fallback.",
+          );
+          finalResponse = assessmentService.completeAssessmentOffline(
+            snapshotUser.id,
+            snapshotAssessment,
+            snapshotResponses,
+            snapshotStartTime,
+          );
+          isOffline = true;
+          // Also add to history and clear progress so the store stays consistent
+          useAssessmentStore.setState((prev) => ({
+            assessmentHistory: [finalResponse!, ...prev.assessmentHistory],
+            currentAssessment: null,
+          }));
+          try {
+            const progressKey = `assessment-progress:${snapshotUser.id}:${snapshotAssessment.type}`;
+            localStorage.removeItem(progressKey);
+          } catch { /* best-effort */ }
+        }
+
+        if (finalResponse && snapshotAssessment) {
+          setIsOfflineResult(isOffline);
 
           let assessmentResult: AssessmentResult;
           try {
-            // Try to enrich with previous-comparison data from the backend.
-            // This call may also fail when offline — we catch and build locally.
             assessmentResult = await assessmentService.getAssessmentResult(
               snapshotAssessment,
-              response,
+              finalResponse,
             );
           } catch {
-            // Still offline — build the result object locally with no comparison
+            // Network call to enrich result also failed — build locally
             assessmentResult = {
               assessment: snapshotAssessment,
-              response,
+              response: finalResponse,
               interpretation: assessmentService.getInterpretation(
                 snapshotAssessment,
-                response.scores,
+                finalResponse.scores,
               ),
               subscale_interpretations: assessmentService.getSubscaleInterpretations(
                 snapshotAssessment,
-                response.scores,
+                finalResponse.scores,
               ),
               comparison_to_previous: undefined,
             };
@@ -246,14 +273,43 @@ export default function AssessmentFlowPage() {
           setResult(assessmentResult);
           setShowResult(true);
         } else {
-          // Should not happen any more — completeAssessment always returns
-          // something — but keep as a last-resort safety net.
+          // Absolute last line of defence — should be unreachable now.
           setSubmitError(
-            "Failed to generate assessment results. Please try again.",
+            "Unable to generate results. Please reload and try again.",
           );
         }
       } catch (error) {
-        console.error("Error completing assessment:", error);
+        // Even the outer try/catch: try offline one more time before giving up
+        console.error("[Assessment] Unexpected error in handleNext:", error);
+        if (snapshotAssessment && snapshotUser && Object.keys(snapshotResponses).length > 0) {
+          try {
+            const emergencyResponse = assessmentService.completeAssessmentOffline(
+              snapshotUser.id,
+              snapshotAssessment,
+              snapshotResponses,
+              snapshotStartTime,
+            );
+            const emergencyResult: AssessmentResult = {
+              assessment: snapshotAssessment,
+              response: emergencyResponse,
+              interpretation: assessmentService.getInterpretation(
+                snapshotAssessment,
+                emergencyResponse.scores,
+              ),
+              subscale_interpretations: assessmentService.getSubscaleInterpretations(
+                snapshotAssessment,
+                emergencyResponse.scores,
+              ),
+              comparison_to_previous: undefined,
+            };
+            setIsOfflineResult(true);
+            setResult(emergencyResult);
+            setShowResult(true);
+            return; // Skip the setSubmitError below
+          } catch (emergencyErr) {
+            console.error("[Assessment] Emergency fallback also failed:", emergencyErr);
+          }
+        }
         setSubmitError("An unexpected error occurred. Please try again.");
       } finally {
         setCompleting(false);

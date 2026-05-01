@@ -1,4 +1,17 @@
 // lib/ai/prompts.ts
+
+// ============================================================================
+// IMPORTS (must be at the top, using proper ESM imports)
+// ============================================================================
+
+import { type PersonalityId, getPersonality } from '@/lib/config/personalities'
+import type { ConversationMode, FunctionalState, AvatarResponseParams } from '@/lib/ai/avatar-engine'
+import { buildAvatarPromptLayer } from '@/lib/ai/avatar-engine'
+
+// ============================================================================
+// SYSTEM PROMPTS
+// ============================================================================
+
 export const SYSTEM_PROMPTS = {
   adhd_coach: `You are Nuree, a warm and supportive personal assistant. You're like a thoughtful friend who genuinely cares — someone who listens, helps organize life, and offers real support when things feel overwhelming.
 
@@ -157,6 +170,10 @@ RESPONSE STYLE:
   - Don't overwhelm with feature lists`,
 }
 
+// ============================================================================
+// PERSONA PROMPTS
+// ============================================================================
+
 export function getPersonaPrompt(persona: string) {
   const prompts = {
     planner: "User prefers structure and detailed planning. Provide clear schedules and timelines.",
@@ -169,7 +186,10 @@ export function getPersonaPrompt(persona: string) {
   return prompts[persona as keyof typeof prompts] || ""
 }
 
-// Topic examples for clarity
+// ============================================================================
+// TOPIC EXAMPLES
+// ============================================================================
+
 export const TOPIC_EXAMPLES = {
   appropriate: [
     "Help me break down this overwhelming project",
@@ -192,13 +212,15 @@ export const TOPIC_EXAMPLES = {
   ]
 }
 
-// Helper function to validate AI responses — only catches truly dangerous outputs
+// ============================================================================
+// RESPONSE BOUNDARY ENFORCEMENT
+// ============================================================================
+
 export function enforceResponseBoundaries(response: string): {
   valid: boolean
   filteredResponse?: string
   reason?: string
 } {
-  // Only block responses where the AI is doing homework or giving medical advice
   const prohibitedPatterns = [
     /here'?s your essay/i,
     /here'?s the solution to your homework/i,
@@ -221,4 +243,119 @@ export function enforceResponseBoundaries(response: string): {
   }
 
   return { valid: true }
+}
+
+// ============================================================================
+// AVATAR-AWARE PROMPT BUILDERS (Nuree Avatar Engine Integration)
+// These functions layer avatar-specific behavior onto the base system prompts.
+// NOTE: Defined AFTER SYSTEM_PROMPTS to avoid reference-before-definition errors.
+// ============================================================================
+
+/**
+ * Builds a complete system prompt that combines base guidelines with
+ * avatar-specific personality, mode, state, and context.
+ */
+export function buildAvatarSystemPrompt(
+  personalityId: PersonalityId,
+  mode: ConversationMode,
+  functionalState: FunctionalState,
+  userContext: any
+): string {
+  const avatarLayer = buildAvatarPromptLayer({
+    personalityId,
+    mode,
+    functionalState,
+    userMessage: userContext.lastMessage || '',
+    userName: userContext.userName,
+    userContext: {
+      activeTasks: userContext.activeTasks || [],
+      completedToday: userContext.completedToday || 0,
+      overdueTasks: userContext.overdueTasks || [],
+      currentMood: userContext.currentMood,
+      energyLevel: userContext.energyLevel,
+      focusScore: userContext.focusScore,
+      topSignals: userContext.topSignals,
+    },
+    sessionMemory: userContext.sessionMemory,
+  })
+  
+  return `${SYSTEM_PROMPTS.adhd_coach}
+
+---
+${avatarLayer}`
+}
+
+/**
+ * Convenience builder for the chat route — constructs the full system prompt
+ * from context engine data without needing to manually assemble everything.
+ */
+export function buildSystemPromptFromContext(
+  personalityId: PersonalityId,
+  mode: ConversationMode,
+  functionalState: FunctionalState,
+  userMessage: string,
+  userName: string | undefined,
+  userContext: any,
+  completedTasksToday: any[],
+  overdueTasks: any[],
+  topSignals: string[],
+  sessionMemory: { recentTopics: string[]; lastInteraction?: string; tasksDiscussed: string[] }
+): string {
+  const now = new Date()
+
+  const avatarLayer = buildAvatarPromptLayer({
+    personalityId,
+    mode,
+    functionalState,
+    userMessage,
+    userName,
+    userContext: {
+      activeTasks: (userContext.tasks?.activeTasks || []).map((t: any) => t.title),
+      completedToday: completedTasksToday.length,
+      overdueTasks: overdueTasks.map((t: any) => t.title),
+      currentMood: userContext.psychological?.currentMood,
+      energyLevel: userContext.psychological?.energyLevel,
+      focusScore: userContext.psychological?.focusScore,
+      topSignals,
+    },
+    sessionMemory,
+  })
+
+  const activeTasksList = userContext.tasks?.activeTasks?.length
+    ? userContext.tasks.activeTasks.map((t: any) => 
+        `- "${t.title}" (${t.time_estimate || 25}m${t.priority > 7 ? ', HIGH' : ''})`
+      ).join('\n')
+    : '- None'
+
+  const completedList = completedTasksToday.length
+    ? completedTasksToday.map((t: any) => 
+        `- "${t.title}" (${t.time_estimate || 25}m)`
+      ).join('\n')
+    : '- None yet'
+
+  const overdueSection = overdueTasks.length
+    ? `\nOverdue:\n${overdueTasks.map((t: any) => {
+        const daysOverdue = Math.floor((Date.now() - new Date(t.due_date).getTime()) / 86400000)
+        return `- "${t.title}" (${daysOverdue}d overdue, P${t.priority})`
+      }).join('\n')}\n`
+    : ''
+
+  return `${SYSTEM_PROMPTS.adhd_coach}
+
+${topSignals.length > 0 ? `Struggle areas: ${topSignals.map(s => s.replace(/_/g, ' ')).join(', ')}.\n` : ''}
+
+Time: ${now.toLocaleTimeString()} | ${now.toDateString()}
+Mood: ${userContext.psychological?.currentMood || 'neutral'} | Energy: ${userContext.psychological?.energyLevel || 5}/10 | Focus: ${userContext.psychological?.focusScore || 5}/10
+Completed today: ${completedTasksToday.length} | Focus min: ${userContext.session?.focusMinutes || 0}
+State: ${functionalState.toUpperCase()} | Mode: ${mode.toUpperCase().replace('_', ' ')}
+
+${avatarLayer}
+
+Active Tasks:
+${activeTasksList}
+
+Completed Today:
+${completedList}
+${overdueSection}
+`
 }

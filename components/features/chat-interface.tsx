@@ -2,7 +2,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { Send, Mic, MicOff, Loader2, Brain, X } from 'lucide-react'
+import { Sparkles, Heart, Brain, Send, Mic, MicOff, Loader2, X } from 'lucide-react'
 import { useChatHandler } from '@/hooks/use-chat-handler'
 import { useUserStore } from '@/store/user-store'
 import { getPersonality, type PersonalityId } from '@/lib/config/personalities'
@@ -110,13 +110,26 @@ export function ChatInterface({ conversationId }: ChatInterfaceProps) {
   return (
     <div className="flex flex-col h-full bg-white rounded-lg shadow-lg">
       {/* Header */}
-      <div className="bg-gradient-to-r from-primary-700 to-secondary-600 p-4 rounded-t-lg">
+      <div className={cn(
+        "p-4 rounded-t-lg",
+        personality.id === 'nur' ? "bg-gradient-to-r from-violet-600 to-fuchsia-500" :
+        personality.id === 'farin' ? "bg-gradient-to-r from-rose-600 to-pink-500" :
+        "bg-gradient-to-r from-blue-600 to-cyan-500"
+      )}>
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <Brain className="w-8 h-8 text-white" />
+            <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
+              {personality.id === 'nur' ? (
+                <Sparkles className="w-6 h-6 text-white" />
+              ) : personality.id === 'farin' ? (
+                <Heart className="w-6 h-6 text-white" />
+              ) : (
+                <Brain className="w-6 h-6 text-white" />
+              )}
+            </div>
             <div>
-              <h2 className="text-xl font-bold text-white">Nuree</h2>
-              <p className="text-white/80 text-sm">Your ADHD support companion</p>
+              <h2 className="text-lg font-bold text-white">{personality.name}</h2>
+              <p className="text-white/70 text-xs">{personality.tagline}</p>
             </div>
           </div>
           {messages.length > 0 && (
@@ -124,9 +137,9 @@ export function ChatInterface({ conversationId }: ChatInterfaceProps) {
               onClick={clearMessages}
               variant="ghost"
               size="sm"
-              className="text-white hover:bg-white/10"
+              className="text-white/70 hover:text-white hover:bg-white/10"
             >
-              Clear Chat
+              Clear
             </Button>
           )}
         </div>

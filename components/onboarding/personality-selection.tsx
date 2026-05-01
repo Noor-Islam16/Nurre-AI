@@ -64,11 +64,12 @@ const colorClasses: Record<PersonalityId, {
 function PersonalityCard({
   personality,
   isSelected,
+  isRecommended = false,  // ADD THIS with default value
   onSelect
 }: {
   personality: PersonalityConfig
   isSelected: boolean
-  isRecommended?: boolean
+  isRecommended?: boolean  // ADD THIS
   onSelect: () => void
 }) {
   const colors = colorClasses[personality.id]

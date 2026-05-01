@@ -175,28 +175,28 @@ export const LOOP_META: Record<
   LoopState,
   { label: string; description: string; color: string }
 > = {
-  Focused: {
-    label: "Focused",
+  "Deep Focus": {
+    label: "Deep Focus",
     description: "You are in a great state for deep work. Let's tackle your most important task.",
     color: "#9B7EB8",
   },
-  Distracted: {
-    label: "Distracted",
+  Ground: {
+    label: "Ground",
     description: "Having trouble focusing? Let's do a quick sound reset to get back on track.",
     color: "#8A9EC2",
   },
-  Overwhelmed: {
-    label: "Overwhelmed",
+  Reset: {
+    label: "Reset",
     description: "You seem overwhelmed. Let's take a deep breath together or talk it out.",
     color: "#C2A87E",
   },
-  Restless: {
-    label: "Restless",
+  Start: {
+    label: "Start",
     description: "Feeling restless? It might be a good time for a quick movement break.",
     color: "#8FA87E",
   },
-  "Low Energy": {
-    label: "Low Energy",
+  Flow: {
+    label: "Flow",
     description: "Energy feeling low? Let's start with something very simple.",
     color: "#7EB8A4",
   },

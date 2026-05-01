@@ -10,11 +10,11 @@ import {
 import type { LoopState } from "@/types/calibration";
 
 const LOOP_PLACEHOLDER_TRACK: Record<LoopState, string> = {
-  "Low Energy": getTrackUrl("track_01"),
-  Restless: getTrackUrl("track_03"),
-  Distracted: getTrackUrl("track_05"),
-  Focused: getTrackUrl("track_07"),
-  Overwhelmed: getTrackUrl("track_09"),
+  "Deep Focus": getTrackUrl("track_01"),
+  Ground: getTrackUrl("track_03"),
+  Reset: getTrackUrl("track_05"),
+  Start: getTrackUrl("track_07"),
+  Flow: getTrackUrl("track_09"),
 };
 
 function resolveLoopUrl(loop: LoopState): string {
@@ -33,7 +33,7 @@ export function FocusMode() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<number>(Date.now());
 
-  const loop = (outputs?.assigned_loop ?? "Focused") as LoopState;
+  const loop = (outputs?.assigned_loop ?? "Start") as LoopState;
   const meta = LOOP_META[loop] || { description: "Preparing your focus environment..." };
   // Use emerald green as the focus color
   const loopColor = "#059669";

@@ -346,31 +346,31 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
     let recommended: typeof tasks = []
     
     switch (functionalState) {
-      case 'Focused':
+      case 'Deep Focus':
         // Deep focus tasks, high priority, or long time estimates
         recommended = incompleteTasks.filter(t => 
           t.taskType === 'deep_focus' || t.priority === 3 || (t.timeEstimate && t.timeEstimate > 30)
         )
         break;
-      case 'Distracted':
+      case 'Ground':
         // Micro tasks, short time estimates, low friction
         recommended = incompleteTasks.filter(t => 
           t.taskType === 'micro' || (t.timeEstimate && t.timeEstimate <= 15)
         )
         break;
-      case 'Overwhelmed':
+      case 'Reset':
         // Smallest possible steps, avoid complex
         recommended = incompleteTasks.filter(t => 
           t.taskType === 'micro' || (t.timeEstimate && t.timeEstimate <= 10)
         )
         break;
-      case 'Restless':
+      case 'Reset':
         // Creative or stimulating tasks
         recommended = incompleteTasks.filter(t => 
           t.taskType === 'creative'
         )
         break;
-      case 'Low Energy':
+      case 'Start':
         // Light admin, easy wins
         recommended = incompleteTasks.filter(t => 
           t.taskType === 'light_admin' || (t.timeEstimate && t.timeEstimate <= 20 && t.priority < 3)

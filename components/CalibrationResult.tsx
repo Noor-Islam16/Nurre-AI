@@ -6,11 +6,11 @@ import { apiStartFocusSession, getTrackUrl } from "@/lib/calibrationApi";
 import type { LoopState } from "@/types/calibration";
 
 const LOOP_PREVIEW_TRACK: Record<string, string> = {
-  "Low Energy": getTrackUrl("track_01"),
-  Restless: getTrackUrl("track_03"),
-  Distracted: getTrackUrl("track_05"),
-  Focused: getTrackUrl("track_07"),
-  Overwhelmed: getTrackUrl("track_09"),
+   "Deep Focus": getTrackUrl("track_01"),
+  Ground: getTrackUrl("track_03"),
+  Reset: getTrackUrl("track_05"),
+  Start: getTrackUrl("track_07"),
+  Flow: getTrackUrl("track_09"),
 };
 
 const METRIC_EXPLANATIONS: Record<string, string> = {

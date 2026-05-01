@@ -28,31 +28,31 @@ export function useRegulation(functionalState: LoopState | null) {
     }
 
     switch (functionalState) {
-      case 'Overwhelmed':
+      case 'Deep Focus':
         setAdvice({
           interventions: ['breathing', 'talk_it_out', 'grounding'],
           primaryPrompt: 'You seem overwhelmed. Let\'s take a deep breath together or talk it out.'
         })
         break
-      case 'Distracted':
+      case 'Ground':
         setAdvice({
           interventions: ['short_sound_reset', 'quick_challenge'],
           primaryPrompt: 'Having trouble focusing? Let\'s do a quick sound reset to get back on track.'
         })
         break
-      case 'Restless':
+      case 'Reset':
         setAdvice({
           interventions: ['movement_prompt', 'energising_sound'],
           primaryPrompt: 'Feeling restless? It might be a good time for a quick movement break.'
         })
         break
-      case 'Low Energy':
+      case 'Start':
         setAdvice({
           interventions: ['light_activation', 'simple_start_cue'],
           primaryPrompt: 'Energy feeling low? Let\'s start with something very simple.'
         })
         break
-      case 'Focused':
+      case 'Flow':
         setAdvice({
           interventions: ['none'],
           primaryPrompt: 'You are in a great state for deep work. Let\'s tackle your most important task.'

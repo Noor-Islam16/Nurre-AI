@@ -8,6 +8,8 @@ import { useAIAssistant } from "@/hooks/useAIAssistant";
 import { useVoiceChat } from "@/hooks/use-voice-chat";
 import { useVoiceStore } from "@/store/voice-store";
 import { useUserStore } from "@/store/user-store";
+import { useCalibrationStore } from "@/store/calibrationStore";
+import { useRegulation } from "@/hooks/use-regulation";
 import { useAudioLevel } from "@/lib/hooks/use-audio-level";
 import { getPersonality, type PersonalityId } from "@/lib/config/personalities";
 import dynamic from "next/dynamic";
@@ -90,6 +92,11 @@ export function NureeAISection({
     const saved = localStorage.getItem("nuree-dashboard-mode");
     return saved === "text" ? "text" : "voice";
   });
+
+  // Get current functional state
+  const outputs = useCalibrationStore((state) => state.outputs);
+  const functionalState = outputs?.assigned_loop || null;
+  const regulation = useRegulation(functionalState);
 
   // Immersive mode state
   const [isImmersive, setIsImmersive] = useState(false);
@@ -460,9 +467,19 @@ export function NureeAISection({
                         <h2 className="text-2xl md:text-3xl lg:text-4xl xl:text-5xl 2xl:text-6xl font-bold text-gray-900 mb-1 xl:mb-2">
                           Hi, I&apos;m {personality.name}
                         </h2>
-                        <p className="text-base lg:text-lg xl:text-xl 2xl:text-2xl text-gray-500">
-                          How are you feeling?
+                        <p className="text-base lg:text-lg xl:text-xl 2xl:text-2xl text-gray-500 max-w-md mx-auto">
+                          {regulation.primaryPrompt || "How are you feeling?"}
                         </p>
+                        
+                        {regulation.interventions.length > 0 && regulation.interventions[0] !== 'none' && (
+                          <div className="mt-4 flex flex-wrap justify-center gap-2">
+                            {regulation.interventions.map(intervention => (
+                              <span key={intervention} className="px-3 py-1 bg-violet-100 text-violet-700 rounded-full text-xs xl:text-sm font-medium">
+                                {intervention.replace(/_/g, ' ')}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </motion.div>
                     )}
 

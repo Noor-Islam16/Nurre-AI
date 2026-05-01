@@ -1,3 +1,4 @@
+// lib/ai/responses-api-client.ts
 import OpenAI from 'openai';
 import { ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources/chat';
 

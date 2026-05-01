@@ -1,3 +1,4 @@
+// onboarding/submit/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -158,7 +159,10 @@ export async function POST(request: NextRequest) {
         hyper_severity: scoringResult.severity.hyper,
         onboarding_version: 2,
         onboarding_completed: true,
-        personalisation_profile: personalisationProfile,
+        personalisation_profile: {
+          ...personalisationProfile,
+          recommended_avatar: scoringResult.routing.recommendedAvatar
+        },
         updated_at: new Date().toISOString(),
       })
       .eq("id", user.id);

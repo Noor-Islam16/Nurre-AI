@@ -1,3 +1,4 @@
+// components/features/chat-interface.tsx
 'use client'
 
 import { useState, useRef, useEffect, useMemo } from 'react'

@@ -188,11 +188,17 @@ export async function middleware(request: NextRequest) {
     
     // Check if already completed onboarding
     if (userProfile?.onboarding_completed) {
-      const redirectResponse = NextResponse.redirect(new URL('/dashboard', request.url))
-      Object.entries(securityHeadersToApply).forEach(([key, value]) => {
-        redirectResponse.headers.set(key, value)
-      })
-      return redirectResponse
+      // Allow access to booking and success pages which happen immediately after onboarding completion
+      const isPostOnboardingRoute = request.nextUrl.pathname.startsWith('/onboarding/booking') || 
+                                    request.nextUrl.pathname.startsWith('/onboarding/success');
+                                    
+      if (!isPostOnboardingRoute) {
+        const redirectResponse = NextResponse.redirect(new URL('/dashboard', request.url))
+        Object.entries(securityHeadersToApply).forEach(([key, value]) => {
+          redirectResponse.headers.set(key, value)
+        })
+        return redirectResponse
+      }
     }
   }
   

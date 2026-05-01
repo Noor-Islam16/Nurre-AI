@@ -27,13 +27,13 @@ export const questionResponseSchema = z.union([
 
 // Individual onboarding response
 export const onboardingResponseSchema = z.object({
-  questionNumber: z.number().min(1).max(20), // Updated for 20-question version
+  questionNumber: z.number().min(1).max(30), // Updated for 30-question version
   response: questionResponseSchema
 })
 
 // Submit assessment request validation
 export const submitAssessmentSchema = z.object({
-  responses: z.array(onboardingResponseSchema).length(20), // Updated for 20-question version
+  responses: z.array(onboardingResponseSchema).length(30), // Updated for 30-question version
   results: z.object({
     counts: z.object({
       inattEndorsed: z.number().min(0).max(6), // Max 6 for 20-question version
@@ -57,7 +57,7 @@ export const submitAssessmentSchema = z.object({
 
 // Save progress request validation
 export const saveProgressSchema = z.object({
-  responses: z.array(onboardingResponseSchema).min(1).max(20),
+  responses: z.array(onboardingResponseSchema).min(1).max(30),
   currentSection: z.number().min(0).max(3).optional()
 })
 
@@ -86,7 +86,7 @@ export const scoringResultSchema = z.object({
 export const dbOnboardingResponseSchema = z.object({
   id: z.string().uuid(),
   user_id: z.string().uuid(),
-  question_number: z.number().min(1).max(20),
+  question_number: z.number().min(1).max(30),
   response: z.string(), // Always stored as string in DB
   created_at: z.string().datetime()
 })
@@ -197,7 +197,7 @@ export function validateQuestionResponse(type: string, value: unknown) {
 }
 
 // Check if all required questions are answered
-export function validateCompleteness(formData: Record<number, unknown>, totalQuestions: number = 20) {
+export function validateCompleteness(formData: Record<number, unknown>, totalQuestions: number = 30) {
   const answered = Object.keys(formData).map(Number).filter(id => id >= 1 && id <= totalQuestions)
   return answered.length === totalQuestions
 }

@@ -12,6 +12,7 @@ interface PersonalitySelectionProps {
   onSelect: (personalityId: PersonalityId) => void
   onBack: () => void
   isSubmitting?: boolean
+  recommendedAvatar?: PersonalityId
 }
 
 // Icon mapping for each personality
@@ -67,6 +68,7 @@ function PersonalityCard({
 }: {
   personality: PersonalityConfig
   isSelected: boolean
+  isRecommended?: boolean
   onSelect: () => void
 }) {
   const colors = colorClasses[personality.id]
@@ -115,9 +117,16 @@ function PersonalityCard({
           <h3 className="text-lg font-semibold text-gray-900">
             {personality.name}
           </h3>
-          <p className={cn("text-sm font-medium", colors.text)}>
-            {personality.tagline}
-          </p>
+          <div className="flex flex-col gap-1">
+            <p className={cn("text-sm font-medium", colors.text)}>
+              {personality.tagline}
+            </p>
+            {isRecommended && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-800 border border-amber-200 w-fit">
+                ✨ Recommended for you
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -146,9 +155,10 @@ function PersonalityCard({
 export function PersonalitySelection({
   onSelect,
   onBack,
-  isSubmitting = false
+  isSubmitting = false,
+  recommendedAvatar
 }: PersonalitySelectionProps) {
-  const [selectedPersonality, setSelectedPersonality] = useState<PersonalityId | null>(null)
+  const [selectedPersonality, setSelectedPersonality] = useState<PersonalityId | null>(recommendedAvatar || null)
   const personalities = getPersonalityList()
 
   const handleContinue = () => {
@@ -198,6 +208,7 @@ export function PersonalitySelection({
                   <PersonalityCard
                     personality={personality}
                     isSelected={selectedPersonality === personality.id}
+                    isRecommended={recommendedAvatar === personality.id}
                     onSelect={() => setSelectedPersonality(personality.id)}
                   />
                 </motion.div>

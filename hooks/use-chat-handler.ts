@@ -1,3 +1,4 @@
+// hooks/use-chat-handler.ts
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useUser } from '@/hooks/use-user'
 import { useChatStore } from '@/store/chat-store'

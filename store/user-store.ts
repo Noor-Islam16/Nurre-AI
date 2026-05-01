@@ -15,6 +15,16 @@ export interface UserProfile {
   selected_personality?: 'nur' | 'farin' | 'zak' // AI coaching personality
   adhd_persona?: string
   last_persona_assessment?: string
+  task_types?: string[]
+  focus_time?: string
+  distraction_pattern?: string
+  phone_app?: string
+  adhd_pattern?: string
+  motivation_style?: string
+  overwhelm_support?: string
+  avatar_tone?: string
+  work_environment?: string
+  sensory_preference?: string
 }
 
 interface UserState {

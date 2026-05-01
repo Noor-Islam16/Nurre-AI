@@ -1,3 +1,4 @@
+// lib/ai/client-service.ts
 import { preferenceManager } from './preference-manager'
 import { usePreferenceStore } from '@/store/preference-store'
 

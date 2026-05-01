@@ -39,6 +39,7 @@ interface Task {
   parent_id?: string  // Changed from parent_task_id
   title: string
   description?: string
+  taskType?: 'deep_focus' | 'light_admin' | 'creative' | 'urgent' | 'micro'
   timeEstimate?: number
   priority: number
   completed: boolean
@@ -61,6 +62,7 @@ interface TaskStore {
   deleteTask: (id: string) => Promise<void>
   toggleComplete: (id: string) => Promise<void>
   reorderTasks: (tasks: Task[]) => void
+  getRecommendedTasks: (functionalState: import('@/types/calibration').LoopState) => Task[]
 
   // Tool-friendly methods for native tool calling
   createTaskFromTool: (params: {
@@ -121,6 +123,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
         // Map database fields to frontend fields
         const mappedTasks = data.map((task: any) => ({
           ...task,
+          taskType: task.task_type,
           timeEstimate: task.time_estimate,      // Map snake_case to camelCase
           aiSubtasks: task.ai_subtasks,          // Also map this if it exists
           completedAt: task.completed_at,        // And this for consistency
@@ -174,6 +177,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       user_id: user.id,
       title: task.title || '',
       description: task.description,
+      task_type: task.taskType,
       time_estimate: task.timeEstimate,
       priority: effectivePriority,
       priority_override: priorityOverride,
@@ -193,6 +197,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       // Map database fields to frontend fields
       const mappedTask = {
         ...data,
+        taskType: data.task_type,
         timeEstimate: data.time_estimate,
         aiSubtasks: data.ai_subtasks,
         completedAt: data.completed_at,
@@ -268,6 +273,7 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
       // Map database fields to frontend fields
       const mappedTask = {
         ...data,
+        taskType: data.task_type,
         timeEstimate: data.time_estimate,
         aiSubtasks: data.ai_subtasks,
         completedAt: data.completed_at,
@@ -313,6 +319,73 @@ export const useTaskStore = create<TaskStore>((set, get) => ({
   
   reorderTasks: (tasks) => {
     set({ tasks })
+  },
+  
+  getRecommendedTasks: (functionalState) => {
+    const { tasks } = get()
+    const now = new Date()
+    const twentyFourHoursFromNow = new Date(now.getTime() + 24 * 60 * 60 * 1000)
+
+    const incompleteTasks = tasks.filter(t => !t.completed)
+
+    // Deadline Override Logic: Due within 24h
+    const urgentTasks = incompleteTasks.filter(t => 
+      t.dueDate && new Date(t.dueDate) <= twentyFourHoursFromNow
+    )
+
+    if (urgentTasks.length > 0) {
+      // Sort urgent tasks by due date
+      return urgentTasks.sort((a, b) => {
+        const dateA = a.dueDate ? new Date(a.dueDate).getTime() : 0;
+        const dateB = b.dueDate ? new Date(b.dueDate).getTime() : 0;
+        return dateA - dateB;
+      })
+    }
+
+    // State Matching Logic
+    let recommended: typeof tasks = []
+    
+    switch (functionalState) {
+      case 'Focused':
+        // Deep focus tasks, high priority, or long time estimates
+        recommended = incompleteTasks.filter(t => 
+          t.taskType === 'deep_focus' || t.priority === 3 || (t.timeEstimate && t.timeEstimate > 30)
+        )
+        break;
+      case 'Distracted':
+        // Micro tasks, short time estimates, low friction
+        recommended = incompleteTasks.filter(t => 
+          t.taskType === 'micro' || (t.timeEstimate && t.timeEstimate <= 15)
+        )
+        break;
+      case 'Overwhelmed':
+        // Smallest possible steps, avoid complex
+        recommended = incompleteTasks.filter(t => 
+          t.taskType === 'micro' || (t.timeEstimate && t.timeEstimate <= 10)
+        )
+        break;
+      case 'Restless':
+        // Creative or stimulating tasks
+        recommended = incompleteTasks.filter(t => 
+          t.taskType === 'creative'
+        )
+        break;
+      case 'Low Energy':
+        // Light admin, easy wins
+        recommended = incompleteTasks.filter(t => 
+          t.taskType === 'light_admin' || (t.timeEstimate && t.timeEstimate <= 20 && t.priority < 3)
+        )
+        break;
+      default:
+        recommended = incompleteTasks
+    }
+
+    // If no exact matches found for state, fallback to returning all incomplete tasks sorted by priority
+    if (recommended.length === 0) {
+      return incompleteTasks
+    }
+
+    return recommended
   },
   
   // Tool-friendly methods for native tool calling

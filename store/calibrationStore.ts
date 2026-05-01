@@ -175,29 +175,29 @@ export const LOOP_META: Record<
   LoopState,
   { label: string; description: string; color: string }
 > = {
-  Start: {
-    label: "Start",
-    description: "A gentle on-ramp into focus — light energy, open space.",
-    color: "#7EB8A4",
-  },
-  Ground: {
-    label: "Ground",
-    description: "Stable, earthy texture. Steady rhythm for deep work.",
-    color: "#8FA87E",
-  },
-  Reset: {
-    label: "Reset",
-    description: "Soft, diffuse sound. Helps clear mental noise and recentre.",
-    color: "#8A9EC2",
-  },
-  "Deep Focus": {
-    label: "Deep Focus",
-    description: "Dense, immersive environment. Maximum concentration support.",
+  Focused: {
+    label: "Focused",
+    description: "You are in a great state for deep work. Let's tackle your most important task.",
     color: "#9B7EB8",
   },
-  Flow: {
-    label: "Flow",
-    description: "Balanced and adaptive. Moves with your natural rhythm.",
+  Distracted: {
+    label: "Distracted",
+    description: "Having trouble focusing? Let's do a quick sound reset to get back on track.",
+    color: "#8A9EC2",
+  },
+  Overwhelmed: {
+    label: "Overwhelmed",
+    description: "You seem overwhelmed. Let's take a deep breath together or talk it out.",
     color: "#C2A87E",
+  },
+  Restless: {
+    label: "Restless",
+    description: "Feeling restless? It might be a good time for a quick movement break.",
+    color: "#8FA87E",
+  },
+  "Low Energy": {
+    label: "Low Energy",
+    description: "Energy feeling low? Let's start with something very simple.",
+    color: "#7EB8A4",
   },
 };

@@ -1,6 +1,6 @@
 // Central configuration for OpenAI API integration
 // Native Tool Calling Only
-
+// lib/ai/openai-config.ts
 import OpenAI from 'openai'
 
 // Model configuration

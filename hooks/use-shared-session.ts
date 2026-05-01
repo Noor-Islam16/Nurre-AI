@@ -1,3 +1,4 @@
+// hooks/use-shared-session.ts
 import { useState, useEffect } from 'react'
 import { ResponseIdManager } from '@/lib/ai/response-id-manager'
 

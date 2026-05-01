@@ -33,6 +33,7 @@ export interface ScoringResult {
     | "negative";
   routing: {
     topSignals: string[];
+    recommendedAvatar: 'nur' | 'farin' | 'zak';
   };
 }
 
@@ -93,6 +94,9 @@ export function scoreAssessment(
 
   const topSignals = identifyTopSignals(responseMap);
 
+  // Avatar Allocation Logic (Q21-30)
+  const avatarScores = calculateAvatarScores(responseMap);
+
   return {
     counts: {
       inattEndorsed,
@@ -110,6 +114,7 @@ export function scoreAssessment(
     screen,
     routing: {
       topSignals,
+      recommendedAvatar: avatarScores.primary,
     },
   };
 }
@@ -183,6 +188,60 @@ function identifyTopSignals(responseMap: Map<number, any>): string[] {
     .sort((a, b) => b.score - a.score)
     .slice(0, 3)
     .map((s) => s.signal);
+}
+
+function calculateAvatarScores(responseMap: Map<number, any>): { scores: Record<'nur' | 'farin' | 'zak', number>, primary: 'nur' | 'farin' | 'zak' } {
+  const scores = { nur: 0, farin: 0, zak: 0 };
+
+  // Q21: Tasks
+  const q21 = responseMap.get(21);
+  if (Array.isArray(q21)) {
+    if (q21.includes("coding") || q21.includes("admin") || q21.includes("research")) scores.zak += 1;
+    if (q21.includes("creative_work") || q21.includes("studying")) scores.nur += 1;
+  }
+
+  // Q23: First distraction
+  const q23 = responseMap.get(23);
+  if (q23 === "picks_up_phone" || q23 === "task_switches") scores.nur += 1;
+  if (q23 === "daydreams") scores.farin += 1;
+
+  // Q25: ADHD Pattern
+  const q25 = responseMap.get(25);
+  if (q25 === "hyperfocus") scores.nur += 1;
+  if (q25 === "cant_start") scores.farin += 1;
+  if (q25 === "cant_finish" || q25 === "deadline_driven") scores.zak += 1;
+
+  // Q26: Motivation
+  const q26 = responseMap.get(26);
+  if (q26 === "rewards") scores.nur += 1;
+  if (q26 === "encouragement") { scores.nur += 1; scores.farin += 1; }
+  if (q26 === "progress_steps" || q26 === "deadlines") scores.zak += 2;
+
+  // Q27: Overwhelm Support
+  const q27 = responseMap.get(27);
+  if (q27 === "talking" || q27 === "breathing") scores.farin += 2;
+  if (q27 === "writing" || q27 === "short_break") scores.zak += 1;
+  if (q27 === "music") scores.nur += 1;
+
+  // Q28: Avatar Tone (Strongest indicator)
+  const q28 = responseMap.get(28);
+  if (q28 === "humorous" || q28 === "motivational") scores.nur += 2;
+  if (q28 === "gentle") scores.farin += 2;
+  if (q28 === "direct") scores.zak += 2;
+
+  // Q30: Sensory Focus Preference
+  const q30 = responseMap.get(30);
+  if (q30 === "music_rhythmic" || q30 === "movement_activity") scores.nur += 1;
+  if (q30 === "ambient_noise") scores.farin += 1;
+  if (q30 === "silent") scores.zak += 1;
+
+  // Determine primary avatar
+  let primary: 'nur' | 'farin' | 'zak' = 'nur';
+  let maxScore = scores.nur;
+  if (scores.farin > maxScore) { primary = 'farin'; maxScore = scores.farin; }
+  if (scores.zak > maxScore) { primary = 'zak'; maxScore = scores.zak; }
+
+  return { scores, primary };
 }
 
 // ============================================

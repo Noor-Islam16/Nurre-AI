@@ -1,3 +1,4 @@
+// store/ai-assistant-store.ts
 import { create } from 'zustand'
 import { createClient } from '@/lib/supabase/client'
 import { ResponseIdManager } from '@/lib/ai/response-id-manager'

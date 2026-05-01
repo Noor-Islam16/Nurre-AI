@@ -6,11 +6,11 @@ import { apiStartFocusSession, getTrackUrl } from "@/lib/calibrationApi";
 import type { LoopState } from "@/types/calibration";
 
 const LOOP_PREVIEW_TRACK: Record<string, string> = {
-  Start: getTrackUrl("track_01"),
-  Ground: getTrackUrl("track_03"),
-  Reset: getTrackUrl("track_05"),
-  "Deep Focus": getTrackUrl("track_07"),
-  Flow: getTrackUrl("track_09"),
+  "Low Energy": getTrackUrl("track_01"),
+  Restless: getTrackUrl("track_03"),
+  Distracted: getTrackUrl("track_05"),
+  Focused: getTrackUrl("track_07"),
+  Overwhelmed: getTrackUrl("track_09"),
 };
 
 const METRIC_EXPLANATIONS: Record<string, string> = {
@@ -77,7 +77,7 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
   if (!outputs) return null;
 
   const loop = outputs.assigned_loop;
-  const meta = LOOP_META[loop];
+  const meta = LOOP_META[loop] || { description: "Custom sound environment generated." };
   // Use emerald green as the loop accent color
   const loopColor = "#059669";
   const insights = generateInsights(outputs.regulation_vector);
@@ -94,7 +94,7 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
     }
 
     setPreviewError(null);
-    const url = LOOP_PREVIEW_TRACK[loop] ?? LOOP_PREVIEW_TRACK["Flow"];
+    const url = LOOP_PREVIEW_TRACK[loop] ?? LOOP_PREVIEW_TRACK["Focused"] ?? getTrackUrl("track_07");
     const audio = new Audio(url);
     audio.volume = 0.75;
     previewRef.current = audio;

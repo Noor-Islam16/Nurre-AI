@@ -2,7 +2,7 @@
 // Nuree Calibrator – Core Types
 // ============================================================
 
-export type LoopState = "Start" | "Ground" | "Reset" | "Deep Focus" | "Flow";
+export type LoopState = "Focused" | "Distracted" | "Overwhelmed" | "Restless" | "Low Energy";
 
 export type CalibrationStatus = "in_progress" | "completed" | "abandoned";
 

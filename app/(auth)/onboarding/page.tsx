@@ -652,6 +652,7 @@ export default function OnboardingPage() {
         onSelect={handlePersonalitySelect}
         onBack={() => setShowPersonalitySelection(false)}
         isSubmitting={isSavingPersonality}
+        recommendedAvatar={results?.routing?.recommendedAvatar as PersonalityId}
       />
     );
   }

@@ -1,3 +1,4 @@
+//onboarding/save-progress/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
@@ -106,7 +107,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Fetch saved Q1–20 progress
+    // Fetch saved progress for all questions (Q1–30)
     const { data: responses, error } = await supabase
       .from("onboarding_responses")
       .select("question_number, response")

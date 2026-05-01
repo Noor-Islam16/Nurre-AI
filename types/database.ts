@@ -15,6 +15,17 @@ export interface User {
   onboarding_completed: boolean
   first_login_after_onboarding?: boolean
   selected_personality?: 'nur' | 'farin' | 'zak' // AI coaching personality
+  // Onboarding Data
+  task_types?: string[]
+  focus_time?: string
+  distraction_pattern?: string
+  phone_app?: string
+  adhd_pattern?: string
+  motivation_style?: string
+  overwhelm_support?: string
+  avatar_tone?: string
+  work_environment?: string
+  sensory_preference?: string
   created_at: string
   updated_at: string
 }
@@ -25,6 +36,7 @@ export interface Task {
   parent_id?: string
   title: string
   description?: string
+  task_type?: 'deep_focus' | 'light_admin' | 'creative' | 'urgent' | 'micro'
   priority: 1 | 2 | 3 // 1=low, 2=medium, 3=high
   time_estimate?: number // minutes
   completed: boolean

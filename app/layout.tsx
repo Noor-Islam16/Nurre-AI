@@ -26,7 +26,7 @@ export default async function RootLayout({
   const nonce = headersList.get('X-Nonce') || undefined
   
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         {/* Add nonce to inline scripts if available */}
         {nonce && (

@@ -1,3 +1,4 @@
+// lib/ai/context-engine.ts
 import { createClient } from '@/lib/supabase/client'
 import { toISOStringNoMs } from '@/lib/utils/date-helpers'
 import { patternCalculator } from '@/lib/patterns/pattern-calculator'

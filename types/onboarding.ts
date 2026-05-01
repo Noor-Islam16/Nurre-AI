@@ -75,6 +75,18 @@ export interface ScoringResult {
   routing: {
     topSignals: string[]
   }
+  profileData?: {
+    task_types: string[]
+    focus_time: string
+    distraction_pattern: string
+    phone_app: string
+    adhd_pattern: string
+    motivation_style: string
+    overwhelm_support: string
+    avatar_tone: string
+    work_environment: string
+    sensory_preference: string
+  }
 }
 
 // Presentation metadata

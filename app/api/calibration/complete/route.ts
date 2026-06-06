@@ -1,14 +1,12 @@
 // POST /api/calibration/complete
-// Runs the full scoring engine and saves the user's sound profile.
+// Runs the tree scoring engine and saves the user's sound profile.
 // Body: { session_id }
 
 import { NextResponse } from "next/server";
 import { getAuthUser, createAdminClient } from "@/lib/supabase/server";
 import { runCalibration } from "@/lib/scoringEngine";
-import type {
-  PairBehaviourData,
-  CalibrationPairResponseRow,
-} from "@/types/calibration";
+import type { CalibrationPairResponseRow } from "@/types/calibration";
+import type { PairBehaviourData } from "@/types/calibration";
 
 export async function POST(request: Request) {
   try {
@@ -41,7 +39,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Fetch all 5 pair responses
+    // Fetch all submitted pair responses (3 or 4 pairs depending on path)
     const { data: pairRows, error: pairsError } = await supabase
       .from("calibration_pair_responses")
       .select("*")
@@ -54,9 +52,11 @@ export async function POST(request: Request) {
         { status: 500 },
       );
     }
-    if (!pairRows || pairRows.length !== 5) {
+
+    const pairCount = pairRows?.length ?? 0;
+    if (!pairRows || pairCount < 3 || pairCount > 4) {
       return NextResponse.json(
-        { error: `Incomplete: ${pairRows?.length ?? 0}/5 pairs submitted` },
+        { error: `Invalid pair count: ${pairCount} (expected 3 or 4)` },
         { status: 422 },
       );
     }
@@ -65,7 +65,7 @@ export async function POST(request: Request) {
     const pairs: PairBehaviourData[] = (
       pairRows as CalibrationPairResponseRow[]
     ).map((row) => ({
-      pair_index: row.pair_index as 1 | 2 | 3 | 4 | 5,
+      pair_index: row.pair_index,
       track_a_id: row.track_a_id,
       track_b_id: row.track_b_id,
       final_choice: row.final_choice,
@@ -74,26 +74,19 @@ export async function POST(request: Request) {
       switch_count: row.switch_count,
     }));
 
-    // Run scoring engine
+    // Run tree scoring
     const outputs = runCalibration(pairs);
-    const vectorArray = [
-      outputs.regulation_vector.x1,
-      outputs.regulation_vector.x2,
-      outputs.regulation_vector.x3,
-      outputs.regulation_vector.x4,
-      outputs.regulation_vector.x5,
-    ];
 
     // Update session to completed
     await supabase
       .from("calibration_sessions")
       .update({
         status: "completed",
-        fss: outputs.fss,
-        gl: outputs.gl,
-        cfi: outputs.cfi,
+        brain_mode: outputs.brain_mode,
+        flag: outputs.flag,
         assigned_loop: outputs.assigned_loop,
-        regulation_vector: vectorArray,
+        path: outputs.path,
+        path_length: outputs.path_length,
         completed_at: new Date().toISOString(),
       })
       .eq("id", session_id);
@@ -103,11 +96,10 @@ export async function POST(request: Request) {
       {
         user_id: user.id,
         session_id,
-        fss: outputs.fss,
-        gl: outputs.gl,
-        cfi: outputs.cfi,
+        brain_mode: outputs.brain_mode,
+        flag: outputs.flag,
         assigned_loop: outputs.assigned_loop,
-        regulation_vector: vectorArray,
+        path: outputs.path,
         model_version: outputs.model_version,
         key_version: outputs.key_version,
         calibrated_at: new Date().toISOString(),

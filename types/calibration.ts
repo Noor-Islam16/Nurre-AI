@@ -1,14 +1,43 @@
 // ============================================================
-// Nuree Calibrator – Core Types
+// Nuree Calibrator – Core Types  (tree-based model)
 // ============================================================
 
+export type BrainMode = "Reset" | "Start" | "Ground" | "Deep Focus" | "Flow";
+export type CalibrationFlag =
+  | "Delayed Reward"
+  | "Groove"
+  | "No-Pulse"
+  | "Deep Reset Bridge"
+  | null;
 export type LoopState = "Deep Focus" | "Ground" | "Reset" | "Start" | "Flow";
 export type CalibrationStatus = "in_progress" | "completed" | "abandoned";
+
+// ─── Track IDs (match Supabase storage filenames without .wav) ─
+
+export const TRACK_IDS = {
+  clip_1: "Nuree Calibration - 1 Below Reset Mode - 1 min",
+  clip_2: "Nuree Calibration - 2 Reset Mode - 1 min",
+  clip_2_5: "Nuree Calibration - 2.5 Reset Delayed - 1 min",
+  clip_3: "Nuree Calibration - 3 Start Mode - 1 min",
+  clip_4: "Nuree Calibration - 4 Groovy Start - 1 min",
+  clip_5: "Nuree Calibration - 5 Ground Mode - 1 min",
+  clip_6: "Nuree Calibration - 6 Ground to Flow Mode - 1 min",
+  clip_7: "Nuree Calibration - 7 Deep Reset - 1min",
+  clip_8: "Nuree Calibration - 8 Deep Focus - 1 min",
+  clip_9: "Nuree Calibration - 9 Flow No Pulse - 1 min",
+  clip_9_5: "Nuree Calibration - 9.5 Flow Delayed - TENSION lvl 1 - 1min",
+  clip_9_7: "Nuree Calibration - 9.7 Flow Delayed - TENSION lvl 2 - 1 min",
+  clip_10: "Nuree Calibration - 10 Flow Mode - 1 min",
+  clip_10_5: "Nuree Calibration - 10.5 Groovy Mode - 1min",
+} as const;
+
+export type TrackId = (typeof TRACK_IDS)[keyof typeof TRACK_IDS];
 
 // ─── Behaviour Logging ──────────────────────────────────────
 
 export interface PairBehaviourData {
-  pair_index: 1 | 2 | 3 | 4 | 5;
+  /** 1-based sequential index of this pair in the session (1–4) */
+  pair_index: number;
   track_a_id: string;
   track_b_id: string;
   final_choice: "A" | "B";
@@ -17,60 +46,59 @@ export interface PairBehaviourData {
   switch_count: number;
 }
 
-// ─── Scoring Intermediates ──────────────────────────────────
+// ─── Tree Node — defines what pair to show next ─────────────
 
-export interface PairScoreResult {
-  pair_index: number;
-  friction: number; // F  (0–1)
-  strength: number; // S  (0.15–1.0)
-  axis_value: number; // x_i (−1 to +1)
+export interface TreeNode {
+  /** Human-readable label for the pair (shown in UI) */
+  label: string;
+  track_a_id: string;
+  track_b_id: string;
+  /** Result when user picks A */
+  on_A: TreeNode | CalibrationResult;
+  /** Result when user picks B */
+  on_B: TreeNode | CalibrationResult;
 }
 
-export interface RegulationVector {
-  x1: number; // Rhythm
-  x2: number; // Density
-  x3: number; // Brightness
-  x4: number; // Width
-  x5: number; // Grounding
+export function isCalibrationResult(
+  node: TreeNode | CalibrationResult,
+): node is CalibrationResult {
+  return "brain_mode" in node;
 }
 
-// ─── Calibration Outputs ────────────────────────────────────
+// ─── Calibration Result (leaf of tree) ─────────────────────
+
+export interface CalibrationResult {
+  brain_mode: BrainMode;
+  flag: CalibrationFlag;
+  assigned_loop: LoopState;
+  /** The clip number sequence that led here e.g. [1, 5, 3] */
+  path: number[];
+}
+
+// ─── Calibration Outputs (stored in DB) ─────────────────────
 
 export interface CalibrationOutputs {
-  fss: string; // e.g. "10110-32013"
-  gl: number; // 1–5
-  cfi: number; // 0–100
+  brain_mode: BrainMode;
+  flag: CalibrationFlag;
   assigned_loop: LoopState;
-  regulation_vector: RegulationVector;
+  path: number[]; // e.g. [1, 5, 3]
+  path_length: number; // how many pairs were shown
   model_version: string;
   key_version: string;
 }
 
 // ─── API Payloads ───────────────────────────────────────────
 
-export interface StartSessionPayload {
-  user_id: string;
-}
-
 export interface StartSessionResponse {
   session_id: string;
   started_at: string;
 }
 
-export interface SubmitPairPayload {
-  session_id: string;
-  pair_response: PairBehaviourData;
-}
-
 export interface SubmitPairResponse {
   pair_index: number;
   recorded: boolean;
-  pairs_remaining: number;
-}
-
-export interface CompleteCalibrationPayload {
-  session_id: string;
-  pairs: PairBehaviourData[]; // all 5 pairs (can also accept progressively)
+  pairs_submitted: number;
+  is_complete: boolean;
 }
 
 export interface CompleteCalibrationResponse {
@@ -82,11 +110,10 @@ export interface GetProfileResponse {
   has_profile: boolean;
   profile?: {
     session_id: string;
-    fss: string;
-    gl: number;
-    cfi: number;
+    brain_mode: BrainMode;
+    flag: CalibrationFlag;
     assigned_loop: LoopState;
-    regulation_vector: RegulationVector;
+    path: number[];
     calibrated_at: string;
     model_version: string;
     key_version: string;
@@ -98,11 +125,11 @@ export interface GetProfileResponse {
 export interface CalibrationSessionRow {
   id: string;
   user_id: string;
-  fss: string | null;
-  gl: number | null;
-  cfi: number | null;
+  brain_mode: BrainMode | null;
+  flag: CalibrationFlag | null;
   assigned_loop: LoopState | null;
-  regulation_vector: number[] | null;
+  path: number[] | null;
+  path_length: number | null;
   status: CalibrationStatus;
   model_version: string;
   key_version: string;
@@ -123,9 +150,6 @@ export interface CalibrationPairResponseRow {
   decision_time_ms: number;
   replay_count_total: number;
   switch_count: number;
-  friction: number | null;
-  strength: number | null;
-  axis_value: number | null;
   responded_at: string;
   created_at: string;
 }
@@ -134,11 +158,10 @@ export interface UserSoundProfileRow {
   id: string;
   user_id: string;
   session_id: string | null;
-  fss: string;
-  gl: number;
-  cfi: number;
+  brain_mode: BrainMode;
+  flag: CalibrationFlag;
   assigned_loop: LoopState;
-  regulation_vector: number[] | null;
+  path: number[];
   model_version: string;
   key_version: string;
   calibrated_at: string;

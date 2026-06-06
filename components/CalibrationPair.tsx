@@ -1,10 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import {
-  useCalibrationStore,
-  PAIR_TRACK_CONFIG,
-} from "@/store/calibrationStore";
+import { useCalibrationStore } from "@/store/calibrationStore";
 import {
   apiSubmitPair,
   apiCompleteCalibration,
@@ -12,34 +9,33 @@ import {
 } from "@/lib/calibrationApi";
 import type { PairBehaviourData } from "@/types/calibration";
 
-// Per-step AI feedback messages shown between pairs
+// Max pairs in any path is 4 (pairs shown, not tree depth)
+const MAX_PAIRS = 4;
+
 const STEP_FEEDBACK: Record<number, string> = {
-  1: "Analyzing your auditory preference…",
-  2: "Detecting rhythm sensitivity…",
+  1: "Analyzing your energy baseline…",
+  2: "Detecting your regulation range…",
   3: "Building your focus profile…",
-  4: "Calibrating sound density response…",
-  5: "Finalizing your auditory signature…",
+  4: "Refining your auditory signature…",
 };
 
 export function CalibrationPair() {
   const {
     session_id,
-    current_pair_index,
+    current_node,
+    choices,
+    pair_sequence_index,
     submitted_pairs,
-    addSubmittedPair,
+    recordChoice,
     setProcessing,
     setResult,
   } = useCalibrationStore();
 
-  const config = PAIR_TRACK_CONFIG[current_pair_index - 1];
-
   type TrackState = "idle" | "playing" | "selected" | "done";
   const [stateA, setStateA] = useState<TrackState>("idle");
   const [stateB, setStateB] = useState<TrackState>("idle");
-
   const [currentPlaying, setCurrentPlaying] = useState<"A" | "B" | null>(null);
   const [chosen, setChosen] = useState<"A" | "B" | null>(null);
-
   const [replays, setReplays] = useState(0);
   const [switches, setSwitches] = useState(0);
   const [confirming, setConfirming] = useState(false);
@@ -50,6 +46,7 @@ export function CalibrationPair() {
   const startedAtRef = useRef<number>(Date.now());
   const autoPlayBRef = useRef(false);
 
+  // Reset local state whenever tree node changes (= new pair)
   useEffect(() => {
     setStateA("idle");
     setStateB("idle");
@@ -61,36 +58,37 @@ export function CalibrationPair() {
     setError(null);
     autoPlayBRef.current = false;
     startedAtRef.current = Date.now();
-
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.onended = null;
       audioRef.current = null;
     }
-  }, [current_pair_index]);
+  }, [current_node]);
 
   useEffect(() => {
     return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.onended = null;
-        audioRef.current = null;
-      }
+      audioRef.current?.pause();
     };
   }, []);
 
+  if (!current_node) return null;
+
+  const pairIndex = pair_sequence_index; // 1-based display index
+
   function playTrack(track: "A" | "B", auto = false) {
-    if (!config || confirming) return;
+    if (!current_node || confirming) return;
 
     const url =
       track === "A"
-        ? getTrackUrl(config.track_a_id)
-        : getTrackUrl(config.track_b_id);
+        ? getTrackUrl(current_node.track_a_id)
+        : getTrackUrl(current_node.track_b_id);
 
     if (!auto) {
-      if (currentPlaying !== null && currentPlaying !== track)
+      if (currentPlaying !== null && currentPlaying !== track) {
         setSwitches((s) => s + 1);
-      else if (currentPlaying === track) setReplays((r) => r + 1);
+      } else if (currentPlaying === track) {
+        setReplays((r) => r + 1);
+      }
     }
 
     if (audioRef.current) {
@@ -113,46 +111,32 @@ export function CalibrationPair() {
     }
 
     audioRef.current = audio;
-
-    audio.play().catch((err) => {
-      console.error("Audio play error:", err);
-      setError("Could not play audio. Check your browser allows audio.");
+    audio.play().catch(() => {
+      setError("Could not play audio. Check browser audio permissions.");
     });
 
     setCurrentPlaying(track);
-
     if (track === "A") {
       setStateA("playing");
-      setStateB((prev) => (prev === "playing" ? "idle" : prev));
+      setStateB((p) => (p === "playing" ? "idle" : p));
     } else {
       setStateB("playing");
-      setStateA((prev) => (prev === "playing" ? "idle" : prev));
+      setStateA((p) => (p === "playing" ? "idle" : p));
     }
   }
 
   function handleTap(track: "A" | "B") {
-    if (confirming) return;
-
+    if (confirming || chosen !== null) return;
     const state = track === "A" ? stateA : stateB;
-
-    if (chosen !== null) return;
-
-    if (state === "idle") {
-      playTrack(track);
-      return;
-    }
-
     if (state === "playing") {
       selectTrack(track);
-      return;
+    } else {
+      playTrack(track);
     }
-
-    playTrack(track);
   }
 
   function selectTrack(track: "A" | "B") {
     if (confirming || chosen !== null) return;
-
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.onended = null;
@@ -162,7 +146,6 @@ export function CalibrationPair() {
     setChosen(track);
     setStateA(track === "A" ? "selected" : "done");
     setStateB(track === "B" ? "selected" : "done");
-
     setShowFeedback(true);
     setTimeout(() => {
       setShowFeedback(false);
@@ -171,15 +154,14 @@ export function CalibrationPair() {
   }
 
   async function handleConfirm(choice: "A" | "B") {
-    if (!config || !session_id || confirming) return;
-
+    if (!current_node || !session_id || confirming) return;
     setConfirming(true);
     setError(null);
 
     const pairData: PairBehaviourData = {
-      pair_index: config.pair_index,
-      track_a_id: config.track_a_id,
-      track_b_id: config.track_b_id,
+      pair_index: pairIndex,
+      track_a_id: current_node.track_a_id,
+      track_b_id: current_node.track_b_id,
       final_choice: choice,
       decision_time_ms: Math.max(0, Date.now() - startedAtRef.current),
       replay_count_total: replays,
@@ -188,9 +170,19 @@ export function CalibrationPair() {
 
     try {
       await apiSubmitPair(session_id, pairData);
-      addSubmittedPair(pairData);
-      if (config.pair_index === 5) {
+
+      // Determine next step from tree
+      const nextChoices = [...choices, choice];
+      const { getNextNode } = await import("@/lib/scoringEngine");
+      const nextNode = getNextNode(nextChoices);
+
+      // Record choice in store (also advances node)
+      recordChoice(choice, pairData);
+
+      if (nextNode === null) {
+        // Leaf reached — complete calibration
         setProcessing();
+        const allPairs = [...submitted_pairs, pairData];
         const { outputs } = await apiCompleteCalibration(session_id);
         setResult(outputs);
       }
@@ -204,9 +196,7 @@ export function CalibrationPair() {
     }
   }
 
-  if (!config) return null;
-
-  const progress = ((current_pair_index - 1) / 5) * 100;
+  const progress = ((pairIndex - 1) / MAX_PAIRS) * 100;
 
   return (
     <div className="nuree-card fade-up" style={{ maxWidth: "640px" }}>
@@ -219,9 +209,12 @@ export function CalibrationPair() {
           marginBottom: "0.75rem",
         }}
       >
-        <p className="nuree-label">Step {current_pair_index} of 5</p>
-        <p className="nuree-label" style={{ color: "#059669" }}>
-          {config.axis}
+        <p className="nuree-label">Step {pairIndex}</p>
+        <p
+          className="nuree-label"
+          style={{ color: "#059669", fontSize: "0.75rem" }}
+        >
+          {current_node.label}
         </p>
       </div>
 
@@ -244,7 +237,7 @@ export function CalibrationPair() {
             {Math.round(progress)}% complete
           </span>
           <span style={{ fontSize: "0.7rem", color: "#6b7280" }}>
-            {5 - current_pair_index + 1} left
+            Almost there
           </span>
         </div>
       </div>
@@ -281,7 +274,7 @@ export function CalibrationPair() {
               animation: "fadeUp 0.3s ease forwards",
             }}
           >
-            {STEP_FEEDBACK[current_pair_index]}
+            {STEP_FEEDBACK[pairIndex] ?? "Processing your response…"}
           </p>
         )}
       </div>
@@ -353,11 +346,7 @@ export function CalibrationPair() {
                   fontFamily: "Playfair Display, Georgia, serif",
                   fontSize: "2.75rem",
                   fontWeight: 400,
-                  color: isSelected
-                    ? "#059669"
-                    : isPlaying
-                      ? "#059669"
-                      : "#111827",
+                  color: isSelected || isPlaying ? "#059669" : "#111827",
                   lineHeight: 1,
                   transition: "color 0.2s ease",
                 }}
@@ -396,7 +385,7 @@ export function CalibrationPair() {
           Tap a sound to begin
         </p>
       )}
-      {!chosen && currentPlaying !== null && stateA === "idle" && (
+      {!chosen && currentPlaying === "A" && stateB === "idle" && (
         <p
           style={{
             textAlign: "center",
@@ -409,7 +398,6 @@ export function CalibrationPair() {
         </p>
       )}
 
-      {/* Error */}
       {error && (
         <p
           style={{
@@ -456,7 +444,7 @@ function PlayingRipple() {
             borderRadius: "50%",
             border: "1px solid #059669",
             opacity: 0,
-            animation: `pulse-ring 2s ease-out infinite`,
+            animation: "pulse-ring 2s ease-out infinite",
             animationDelay: `${i * 0.65}s`,
           }}
         />

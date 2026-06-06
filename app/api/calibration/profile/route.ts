@@ -25,17 +25,14 @@ export async function GET() {
       );
     }
 
-    const v: number[] = profile.regulation_vector ?? [];
-
     return NextResponse.json({
       has_profile: true,
       profile: {
         session_id: profile.session_id,
-        fss: profile.fss,
-        gl: profile.gl,
-        cfi: profile.cfi,
+        brain_mode: profile.brain_mode,
+        flag: profile.flag ?? null,
         assigned_loop: profile.assigned_loop,
-        regulation_vector: { x1: v[0], x2: v[1], x3: v[2], x4: v[3], x5: v[4] },
+        path: profile.path ?? [],
         calibrated_at: profile.calibrated_at,
         model_version: profile.model_version,
         key_version: profile.key_version,

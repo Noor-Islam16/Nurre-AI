@@ -4,8 +4,11 @@
 
 import { NextResponse } from "next/server";
 import { getAuthUser, createAdminClient } from "@/lib/supabase/server";
-import { scorePair } from "@/lib/scoringEngine";
 import type { PairBehaviourData } from "@/types/calibration";
+
+// Max pairs for any calibration path
+const MAX_PAIRS = 4;
+const MIN_PAIRS = 3;
 
 export async function POST(request: Request) {
   try {
@@ -25,7 +28,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Verify session belongs to this user and is in_progress
+    // Verify session
     const { data: session, error: sessionError } = await supabase
       .from("calibration_sessions")
       .select("id, status")
@@ -43,15 +46,12 @@ export async function POST(request: Request) {
       );
     }
 
-    if (pair_response.pair_index < 1 || pair_response.pair_index > 5) {
+    if (pair_response.pair_index < 1 || pair_response.pair_index > MAX_PAIRS) {
       return NextResponse.json(
-        { error: "pair_index must be 1–5" },
+        { error: `pair_index must be 1–${MAX_PAIRS}` },
         { status: 400 },
       );
     }
-
-    // Score the pair
-    const scored = scorePair(pair_response);
 
     // Upsert (allows re-submission within same session)
     const { error: upsertError } = await supabase
@@ -67,9 +67,6 @@ export async function POST(request: Request) {
           decision_time_ms: pair_response.decision_time_ms,
           replay_count_total: pair_response.replay_count_total,
           switch_count: pair_response.switch_count,
-          friction: scored.friction,
-          strength: scored.strength,
-          axis_value: scored.axis_value,
         },
         { onConflict: "session_id,pair_index" },
       );
@@ -88,12 +85,14 @@ export async function POST(request: Request) {
       .eq("session_id", session_id);
 
     const pairs_submitted = count ?? 0;
+    const is_complete =
+      pairs_submitted >= MIN_PAIRS && pairs_submitted <= MAX_PAIRS;
 
     return NextResponse.json({
       pair_index: pair_response.pair_index,
       recorded: true,
       pairs_submitted,
-      pairs_remaining: 5 - pairs_submitted,
+      is_complete,
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";

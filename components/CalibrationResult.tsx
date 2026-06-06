@@ -1,48 +1,23 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useCalibrationStore, LOOP_META } from "@/store/calibrationStore";
+import {
+  useCalibrationStore,
+  LOOP_META,
+  FLAG_META,
+} from "@/store/calibrationStore";
 import { apiStartFocusSession, getTrackUrl } from "@/lib/calibrationApi";
+import { TRACK_IDS } from "@/types/calibration";
 import type { LoopState } from "@/types/calibration";
 
-const LOOP_PREVIEW_TRACK: Record<string, string> = {
-   "Deep Focus": getTrackUrl("track_01"),
-  Ground: getTrackUrl("track_03"),
-  Reset: getTrackUrl("track_05"),
-  Start: getTrackUrl("track_07"),
-  Flow: getTrackUrl("track_09"),
+// Preview track per loop — use a real calibration clip that matches the mood
+const LOOP_PREVIEW_TRACK: Record<LoopState, string> = {
+  "Deep Focus": getTrackUrl(TRACK_IDS.clip_8),
+  Ground: getTrackUrl(TRACK_IDS.clip_5),
+  Reset: getTrackUrl(TRACK_IDS.clip_2),
+  Start: getTrackUrl(TRACK_IDS.clip_3),
+  Flow: getTrackUrl(TRACK_IDS.clip_10),
 };
-
-const METRIC_EXPLANATIONS: Record<string, string> = {
-  FSS: "Focus Sound Signature — your unique auditory fingerprint across all five calibration dimensions.",
-  "Gravity Level":
-    "How grounding vs uplifting your optimal sound profile is. Lower levels feel more anchored; higher levels feel more expansive.",
-  "Fit Index":
-    "How well your calibration responses match our sound models. Higher scores mean a more precise match.",
-};
-
-const VECTOR_EXPLANATIONS: Record<string, string> = {
-  Rhythm: "Preference for slower vs faster rhythmic structures.",
-  Density:
-    "Preference for layered, rich sound textures vs sparse, minimal ones.",
-  Brightness: "Sensitivity to high-frequency detail and tonal clarity.",
-  Width: "Preference for wide, spatial sound vs narrow, focused audio.",
-  Grounding: "Preference for deep, earthy tones vs airy, elevated ones.",
-};
-
-function generateInsights(reg: {
-  x1: number;
-  x2: number;
-  x3: number;
-  x4: number;
-  x5: number;
-}) {
-  const insights: string[] = [];
-  insights.push(reg.x1 > 0 ? "Moderate to fast rhythm" : "Slow, steady rhythm");
-  insights.push(reg.x2 > 0 ? "Rich sound density" : "Minimal sound texture");
-  insights.push(reg.x4 > 0 ? "Wider sound space" : "Focused, narrow audio");
-  return insights;
-}
 
 interface Props {
   onRecalibrate: () => void;
@@ -52,24 +27,15 @@ interface Props {
 export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
   const { outputs } = useCalibrationStore();
   const [entering, setEntering] = useState(false);
-  const [revealed, setRevealed] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
-  const [tooltip, setTooltip] = useState<string | null>(null);
+
   const previewRef = useRef<HTMLAudioElement | null>(null);
   const previewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const t = setTimeout(() => setRevealed(true), 200);
-    return () => clearTimeout(t);
-  }, []);
-
-  useEffect(() => {
     return () => {
-      if (previewRef.current) {
-        previewRef.current.pause();
-        previewRef.current = null;
-      }
+      previewRef.current?.pause();
       if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
     };
   }, []);
@@ -77,25 +43,21 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
   if (!outputs) return null;
 
   const loop = outputs.assigned_loop;
-  const meta = LOOP_META[loop] || { description: "Custom sound environment generated." };
-  // Use emerald green as the loop accent color
+  const meta = LOOP_META[loop];
+  const flagMeta = outputs.flag ? FLAG_META[outputs.flag] : null;
   const loopColor = "#059669";
-  const insights = generateInsights(outputs.regulation_vector);
 
   function togglePreview() {
     if (isPreviewing) {
-      if (previewRef.current) {
-        previewRef.current.pause();
-        previewRef.current = null;
-      }
+      previewRef.current?.pause();
+      previewRef.current = null;
       if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
       setIsPreviewing(false);
       return;
     }
 
     setPreviewError(null);
-    const url = LOOP_PREVIEW_TRACK[loop] ?? LOOP_PREVIEW_TRACK["Focused"] ?? getTrackUrl("track_07");
-    const audio = new Audio(url);
+    const audio = new Audio(LOOP_PREVIEW_TRACK[loop]);
     audio.volume = 0.75;
     previewRef.current = audio;
 
@@ -104,24 +66,18 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
       .then(() => {
         setIsPreviewing(true);
         previewTimerRef.current = setTimeout(() => {
-          if (previewRef.current) {
-            previewRef.current.pause();
-            previewRef.current = null;
-          }
+          previewRef.current?.pause();
+          previewRef.current = null;
           setIsPreviewing(false);
         }, 30000);
       })
-      .catch((err) => {
+      .catch(() => {
         setPreviewError("Could not play preview. Try clicking again.");
-        console.error("[CalibrationResult] preview error:", err);
       });
   }
 
   async function handleEnterFocus() {
-    if (previewRef.current) {
-      previewRef.current.pause();
-      previewRef.current = null;
-    }
+    previewRef.current?.pause();
     setIsPreviewing(false);
     setEntering(true);
     try {
@@ -135,7 +91,7 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
 
   return (
     <div style={{ maxWidth: "580px", width: "100%", margin: "0 auto" }}>
-      {/* Header */}
+      {/* Header — Brain Mode */}
       <div
         className="fade-up"
         style={{ textAlign: "center", marginBottom: "2rem" }}
@@ -154,7 +110,7 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
             marginBottom: "0.5rem",
           }}
         >
-          {loop}
+          {outputs.brain_mode}
         </h1>
         <p
           className="nuree-body"
@@ -164,55 +120,45 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
         </p>
       </div>
 
-      {/* Insight summary */}
-      <div
-        className="nuree-card fade-up fade-up-delay-1"
-        style={{
-          padding: "1.5rem",
-          marginBottom: "1rem",
-          maxWidth: "100%",
-          borderColor: `rgba(5,150,105,0.2)`,
-          background: `linear-gradient(135deg, #ffffff 0%, rgba(5,150,105,0.04) 100%)`,
-        }}
-      >
-        <p className="nuree-label" style={{ marginBottom: "1rem" }}>
-          Your brain prefers
-        </p>
-        <ul
+      {/* Flag card — only shown when flag present */}
+      {flagMeta && (
+        <div
+          className="nuree-card fade-up fade-up-delay-1"
           style={{
-            listStyle: "none",
+            padding: "1.25rem 1.5rem",
+            marginBottom: "1rem",
+            maxWidth: "100%",
+            borderColor: "rgba(5,150,105,0.25)",
+            background:
+              "linear-gradient(135deg, #ffffff 0%, rgba(5,150,105,0.05) 100%)",
             display: "flex",
-            flexDirection: "column",
-            gap: "0.5rem",
+            gap: "0.75rem",
+            alignItems: "flex-start",
           }}
         >
-          {insights.map((insight) => (
-            <li
-              key={insight}
+          <span style={{ fontSize: "1.1rem", lineHeight: 1.4 }}>✦</span>
+          <div>
+            <p
               style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "0.6rem",
-                fontSize: "0.88rem",
-                color: "#111827",
+                fontSize: "0.72rem",
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                color: loopColor,
+                marginBottom: "0.3rem",
               }}
             >
-              <span
-                style={{
-                  width: "6px",
-                  height: "6px",
-                  borderRadius: "50%",
-                  background: loopColor,
-                  flexShrink: 0,
-                }}
-              />
-              {insight}
-            </li>
-          ))}
-        </ul>
-      </div>
+              {flagMeta.label}
+            </p>
+            <p
+              style={{ fontSize: "0.85rem", color: "#374151", lineHeight: 1.6 }}
+            >
+              {flagMeta.suggestion}
+            </p>
+          </div>
+        </div>
+      )}
 
-      {/* Sound Preview */}
+      {/* Sound preview */}
       <div
         className="nuree-card fade-up fade-up-delay-1"
         style={{
@@ -224,9 +170,9 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
           justifyContent: "space-between",
           gap: "1rem",
           borderColor: isPreviewing
-            ? `rgba(5,150,105,0.3)`
+            ? "rgba(5,150,105,0.3)"
             : "rgba(0,0,0,0.08)",
-          background: isPreviewing ? `rgba(5,150,105,0.05)` : "#ffffff",
+          background: isPreviewing ? "rgba(5,150,105,0.05)" : "#ffffff",
           transition: "all 0.3s ease",
         }}
       >
@@ -315,248 +261,82 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
         </button>
       </div>
 
-      {/* Metrics row */}
+      {/* Path trail — shows the calibration sequence */}
       <div
-        className="fade-up fade-up-delay-2"
+        className="nuree-card fade-up fade-up-delay-2"
         style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
-          gap: "0.75rem",
+          padding: "1.25rem 1.5rem",
           marginBottom: "1rem",
+          maxWidth: "100%",
         }}
       >
-        <MetricCard
-          label="FSS"
-          value={outputs.fss}
-          mono
-          explanation={METRIC_EXPLANATIONS["FSS"]}
-          onTooltip={setTooltip}
-        />
-        <MetricCard
-          label="Gravity Level"
-          value={`GL ${outputs.gl}`}
-          sub="/5"
-          explanation={METRIC_EXPLANATIONS["Gravity Level"]}
-          onTooltip={setTooltip}
-        />
-        <MetricCard
-          label="Fit Index"
-          value={`${Math.round(outputs.cfi)}`}
-          sub="/100"
-          explanation={METRIC_EXPLANATIONS["Fit Index"]}
-          onTooltip={setTooltip}
-        />
-      </div>
-
-      {/* Tooltip */}
-      {tooltip && (
+        <p className="nuree-label" style={{ marginBottom: "0.75rem" }}>
+          Calibration path
+        </p>
         <div
           style={{
-            background: "#ffffff",
-            border: "1px solid rgba(0,0,0,0.08)",
-            borderRadius: "10px",
-            padding: "0.75rem 1rem",
-            fontSize: "0.78rem",
-            color: "#6b7280",
-            marginBottom: "1rem",
-            lineHeight: 1.6,
-            animation: "fadeUp 0.2s ease forwards",
-            boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.4rem",
+            flexWrap: "wrap",
           }}
-          onClick={() => setTooltip(null)}
         >
-          {tooltip}{" "}
-          <span style={{ color: "#059669", cursor: "pointer" }}>✕</span>
-        </div>
-      )}
-
-      {/* Regulation vector */}
-      <div
-        className="nuree-card fade-up fade-up-delay-3"
-        style={{ padding: "1.5rem", marginBottom: "1.5rem", maxWidth: "100%" }}
-      >
-        <p className="nuree-label" style={{ marginBottom: "1.25rem" }}>
-          Auditory regulation vector
-        </p>
-        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-          {[
-            { label: "Rhythm", value: outputs.regulation_vector.x1 },
-            { label: "Density", value: outputs.regulation_vector.x2 },
-            { label: "Brightness", value: outputs.regulation_vector.x3 },
-            { label: "Width", value: outputs.regulation_vector.x4 },
-            { label: "Grounding", value: outputs.regulation_vector.x5 },
-          ].map(({ label, value }) => (
-            <VectorBar
-              key={label}
-              label={label}
-              value={value}
-              color={loopColor}
-              explanation={VECTOR_EXPLANATIONS[label]}
-              onTooltip={setTooltip}
-            />
+          {outputs.path.map((clip, i) => (
+            <div
+              key={i}
+              style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}
+            >
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: "32px",
+                  height: "32px",
+                  borderRadius: "50%",
+                  background:
+                    i === outputs.path.length - 1
+                      ? loopColor
+                      : "rgba(5,150,105,0.1)",
+                  color: i === outputs.path.length - 1 ? "#fff" : loopColor,
+                  fontSize: "0.75rem",
+                  fontWeight: 500,
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {clip}
+              </span>
+              {i < outputs.path.length - 1 && (
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                  <path
+                    d="M2 5h6M5 2l3 3-3 3"
+                    stroke="#9ca3af"
+                    strokeWidth="1.2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              )}
+            </div>
           ))}
         </div>
+        <p
+          style={{
+            fontSize: "0.72rem",
+            color: "#9ca3af",
+            marginTop: "0.75rem",
+          }}
+        >
+          {outputs.path_length} pair{outputs.path_length !== 1 ? "s" : ""} ·
+          model {outputs.model_version}
+        </p>
       </div>
 
       {/* Recalibrate */}
-      <div className="fade-up fade-up-delay-4" style={{ textAlign: "center" }}>
+      <div className="fade-up fade-up-delay-3" style={{ textAlign: "center" }}>
         <button className="nuree-btn nuree-btn-ghost" onClick={onRecalibrate}>
           Re-calibrate
         </button>
-      </div>
-    </div>
-  );
-}
-
-function MetricCard({
-  label,
-  value,
-  sub,
-  mono,
-  explanation,
-  onTooltip,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  mono?: boolean;
-  explanation: string;
-  onTooltip: (msg: string | null) => void;
-}) {
-  return (
-    <div
-      className="nuree-card"
-      style={{
-        padding: "1.25rem",
-        textAlign: "center",
-        cursor: "help",
-        maxWidth: "100%",
-      }}
-      onClick={() => onTooltip(explanation)}
-      title={explanation}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: "0.3rem",
-          marginBottom: "0.5rem",
-        }}
-      >
-        <p className="nuree-label" style={{ margin: 0 }}>
-          {label}
-        </p>
-        <span style={{ fontSize: "0.6rem", color: "#6b7280", opacity: 0.6 }}>
-          ⓘ
-        </span>
-      </div>
-      <p
-        style={{
-          fontSize: mono ? "0.9rem" : "1.5rem",
-          fontFamily: mono ? "monospace" : "Playfair Display, serif",
-          fontWeight: 400,
-          color: "#111827",
-          letterSpacing: mono ? "0.08em" : "-0.02em",
-          lineHeight: 1,
-        }}
-      >
-        {value}
-        {sub && (
-          <span
-            style={{
-              fontSize: "0.75rem",
-              color: "#6b7280",
-              marginLeft: "2px",
-            }}
-          >
-            {sub}
-          </span>
-        )}
-      </p>
-    </div>
-  );
-}
-
-function VectorBar({
-  label,
-  value,
-  color,
-  explanation,
-  onTooltip,
-}: {
-  label: string;
-  value: number;
-  color: string;
-  explanation: string;
-  onTooltip: (msg: string | null) => void;
-}) {
-  const percent = ((value + 1) / 2) * 100;
-
-  return (
-    <div>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          marginBottom: "0.35rem",
-          cursor: "help",
-        }}
-        onClick={() => onTooltip(`${label}: ${explanation}`)}
-      >
-        <span
-          style={{
-            fontSize: "0.78rem",
-            color: "#6b7280",
-            display: "flex",
-            alignItems: "center",
-            gap: "0.25rem",
-          }}
-        >
-          {label}
-          <span style={{ fontSize: "0.6rem", opacity: 0.5 }}>ⓘ</span>
-        </span>
-        <span
-          style={{
-            fontSize: "0.78rem",
-            color: "#6b7280",
-            fontVariantNumeric: "tabular-nums",
-          }}
-        >
-          {value >= 0 ? "+" : ""}
-          {value.toFixed(2)}
-        </span>
-      </div>
-      <div
-        style={{
-          height: "4px",
-          background: "rgba(0,0,0,0.08)",
-          borderRadius: "4px",
-          position: "relative",
-          overflow: "visible",
-        }}
-      >
-        <div
-          style={{
-            position: "absolute",
-            left: "50%",
-            top: "-2px",
-            width: "1px",
-            height: "8px",
-            background: "rgba(0,0,0,0.1)",
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            height: "100%",
-            borderRadius: "4px",
-            background: color,
-            left: value >= 0 ? "50%" : `${percent}%`,
-            width: `${Math.abs(value) * 50}%`,
-            transition: "width 0.8s cubic-bezier(0.4,0,0.2,1)",
-          }}
-        />
       </div>
     </div>
   );

@@ -1,3 +1,4 @@
+// app/calibrate/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -11,31 +12,26 @@ import { CalibrationResult } from "@/components/CalibrationResult";
 import { FocusMode } from "@/components/FocusMode";
 
 export default function CalibratorPage() {
-  const {
-    step,
-    session_id,
-    startCalibration,
-    setPairState,
-    setResult,
-    startFocus,
-    reset,
-  } = useCalibrationStore();
+  const { step, startCalibration, setResult, startFocus, reset } =
+    useCalibrationStore();
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // On mount: check if user already has a profile → skip straight to result
   useEffect(() => {
     async function checkProfile() {
       try {
         const data = await apiGetProfile();
         if (data.has_profile && data.profile) {
           setResult({
-            fss: data.profile.fss,
-            gl: data.profile.gl,
-            cfi: data.profile.cfi,
-            assigned_loop: data.profile.assigned_loop as any,
-            regulation_vector: { x1: 0, x2: 0, x3: 0, x4: 0, x5: 0 },
-            model_version: "nuree_cal_v1",
-            key_version: "key_v1",
+            brain_mode: data.profile.brain_mode,
+            flag: data.profile.flag ?? null,
+            assigned_loop: data.profile.assigned_loop,
+            path: data.profile.path,
+            path_length: data.profile.path.length,
+            model_version: data.profile.model_version,
+            key_version: data.profile.key_version,
           });
         }
       } catch {
@@ -55,7 +51,6 @@ export default function CalibratorPage() {
       const msg =
         err instanceof Error ? err.message : "Failed to start session";
       setError(msg);
-      console.error("[handleBegin]", err);
     } finally {
       setLoading(false);
     }

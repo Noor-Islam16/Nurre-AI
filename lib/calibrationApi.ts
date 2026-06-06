@@ -1,10 +1,12 @@
 // ============================================================
 // Nuree Calibrator – API Client (browser-side)
 // ============================================================
+// @/lib/calibrationApi
 
 import type {
   PairBehaviourData,
   CalibrationOutputs,
+  GetProfileResponse,
 } from "@/types/calibration";
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
@@ -33,7 +35,7 @@ export async function apiSubmitPair(
   pair_index: number;
   recorded: boolean;
   pairs_submitted: number;
-  pairs_remaining: number;
+  is_complete: boolean;
 }> {
   return apiFetch("/api/calibration/pair", {
     method: "POST",
@@ -50,16 +52,7 @@ export async function apiCompleteCalibration(
   });
 }
 
-export async function apiGetProfile(): Promise<{
-  has_profile: boolean;
-  profile?: {
-    assigned_loop: string;
-    fss: string;
-    gl: number;
-    cfi: number;
-    calibrated_at: string;
-  };
-}> {
+export async function apiGetProfile(): Promise<GetProfileResponse> {
   return apiFetch("/api/calibration/profile");
 }
 
@@ -90,8 +83,13 @@ export async function apiEndFocusSession(
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 
+/**
+ * trackId = filename without .wav extension
+ * e.g. "Nuree Calibration - 1 Below Reset Mode - 1 min"
+ */
 export function getTrackUrl(trackId: string): string {
-  return `${SUPABASE_URL}/storage/v1/object/public/calibration-tracks/${trackId}.wav`;
+  const encoded = encodeURIComponent(`${trackId}.wav`);
+  return `${SUPABASE_URL}/storage/v1/object/public/calibration-tracks/${encoded}`;
 }
 
 export function getLoopUrl(loopName: string): string {

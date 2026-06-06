@@ -1,5 +1,6 @@
 // ============================================================
 // Nuree Calibrator – Client State Store (Zustand)
+// Tree-based model — 3 or 4 pairs, stops when leaf reached
 // ============================================================
 
 import { create } from "zustand";
@@ -7,40 +8,35 @@ import type {
   PairBehaviourData,
   CalibrationOutputs,
   LoopState,
+  BrainMode,
+  CalibrationFlag,
 } from "@/types/calibration";
+import {
+  CALIBRATION_TREE,
+  getNextNode,
+  isCalibrationResult,
+} from "@/lib/scoringEngine";
+import type { TreeNode } from "@/types/calibration";
 
 export type CalibrationStep =
-  | "idle" // not started
-  | "intro" // intro screen
-  | "pair" // active A/B comparison (pair 1–5)
-  | "processing" // scoring in progress
-  | "result" // showing FSS / GL / CFI / loop
-  | "focus"; // focus mode active
-
-export interface PairState {
-  pair_index: 1 | 2 | 3 | 4 | 5;
-  track_a_id: string;
-  track_b_id: string;
-  track_a_url: string;
-  track_b_url: string;
-  // Behaviour signals (tracked live)
-  started_at: number | null; // timestamp when pair was shown
-  replay_count_total: number;
-  switch_count: number;
-  current_playing: "A" | "B" | null;
-  final_choice: "A" | "B" | null;
-}
+  | "idle"
+  | "intro"
+  | "pair"
+  | "processing"
+  | "result"
+  | "focus";
 
 interface CalibrationStore {
   // Session
   session_id: string | null;
   step: CalibrationStep;
-  current_pair_index: number; // 1–5
 
-  // Per-pair live state
-  pair_state: PairState | null;
+  // Tree traversal state
+  choices: Array<"A" | "B">; // choices so far
+  current_node: TreeNode | null; // node currently being shown
+  pair_sequence_index: number; // 1-based display index (1, 2, 3, 4)
 
-  // Submitted pairs (accumulated)
+  // Submitted pairs (for DB)
   submitted_pairs: PairBehaviourData[];
 
   // Final outputs
@@ -51,12 +47,7 @@ interface CalibrationStore {
 
   // Actions
   startCalibration: (session_id: string) => void;
-  setPairState: (pair: PairState) => void;
-  setCurrentPlaying: (track: "A" | "B") => void;
-  incrementReplay: () => void;
-  incrementSwitch: (to: "A" | "B") => void;
-  confirmChoice: (choice: "A" | "B") => void;
-  addSubmittedPair: (pair: PairBehaviourData) => void;
+  recordChoice: (choice: "A" | "B", pair: PairBehaviourData) => void;
   setProcessing: () => void;
   setResult: (outputs: CalibrationOutputs) => void;
   startFocus: (focus_session_id: string) => void;
@@ -66,9 +57,10 @@ interface CalibrationStore {
 const INITIAL_STATE = {
   session_id: null,
   step: "idle" as CalibrationStep,
-  current_pair_index: 1,
-  pair_state: null,
-  submitted_pairs: [],
+  choices: [] as Array<"A" | "B">,
+  current_node: null as TreeNode | null,
+  pair_sequence_index: 1,
+  submitted_pairs: [] as PairBehaviourData[],
   outputs: null,
   focus_session_id: null,
 };
@@ -80,52 +72,35 @@ export const useCalibrationStore = create<CalibrationStore>((set, get) => ({
     set({
       session_id,
       step: "pair",
-      current_pair_index: 1,
+      choices: [],
+      current_node: CALIBRATION_TREE,
+      pair_sequence_index: 1,
       submitted_pairs: [],
     }),
 
-  setPairState: (pair) => set({ pair_state: pair, step: "pair" }),
+  recordChoice: (choice, pair) => {
+    const state = get();
+    const newChoices = [...state.choices, choice];
+    const newSubmitted = [...state.submitted_pairs, pair];
+    const nextNode = getNextNode(newChoices);
 
-  setCurrentPlaying: (track) =>
-    set((state) => ({
-      pair_state: state.pair_state
-        ? { ...state.pair_state, current_playing: track }
-        : null,
-    })),
-
-  incrementReplay: () =>
-    set((state) => ({
-      pair_state: state.pair_state
-        ? {
-            ...state.pair_state,
-            replay_count_total: state.pair_state.replay_count_total + 1,
-          }
-        : null,
-    })),
-
-  incrementSwitch: (to) =>
-    set((state) => ({
-      pair_state: state.pair_state
-        ? {
-            ...state.pair_state,
-            switch_count: state.pair_state.switch_count + 1,
-            current_playing: to,
-          }
-        : null,
-    })),
-
-  confirmChoice: (choice) =>
-    set((state) => ({
-      pair_state: state.pair_state
-        ? { ...state.pair_state, final_choice: choice }
-        : null,
-    })),
-
-  addSubmittedPair: (pair) =>
-    set((state) => ({
-      submitted_pairs: [...state.submitted_pairs, pair],
-      current_pair_index: state.current_pair_index + 1,
-    })),
+    if (nextNode === null) {
+      // Tree is at a leaf — move to processing
+      set({
+        choices: newChoices,
+        submitted_pairs: newSubmitted,
+        pair_sequence_index: state.pair_sequence_index + 1,
+        step: "processing",
+      });
+    } else {
+      set({
+        choices: newChoices,
+        submitted_pairs: newSubmitted,
+        current_node: nextNode,
+        pair_sequence_index: state.pair_sequence_index + 1,
+      });
+    }
+  },
 
   setProcessing: () => set({ step: "processing" }),
 
@@ -133,43 +108,10 @@ export const useCalibrationStore = create<CalibrationStore>((set, get) => ({
 
   startFocus: (focus_session_id) => set({ focus_session_id, step: "focus" }),
 
-  reset: () => set(INITIAL_STATE),
+  reset: () => set({ ...INITIAL_STATE }),
 }));
 
-// ─── Pair track config ───────────────────────────────────────
-
-export const PAIR_TRACK_CONFIG = [
-  {
-    pair_index: 1,
-    track_a_id: "track_01",
-    track_b_id: "track_02",
-    axis: "Rhythm",
-  },
-  {
-    pair_index: 2,
-    track_a_id: "track_03",
-    track_b_id: "track_04",
-    axis: "Density",
-  },
-  {
-    pair_index: 3,
-    track_a_id: "track_05",
-    track_b_id: "track_06",
-    axis: "Brightness",
-  },
-  {
-    pair_index: 4,
-    track_a_id: "track_07",
-    track_b_id: "track_08",
-    axis: "Width",
-  },
-  {
-    pair_index: 5,
-    track_a_id: "track_09",
-    track_b_id: "track_10",
-    axis: "Grounding",
-  },
-] as const;
+// ─── Loop metadata ───────────────────────────────────────────
 
 export const LOOP_META: Record<
   LoopState,
@@ -177,27 +119,57 @@ export const LOOP_META: Record<
 > = {
   "Deep Focus": {
     label: "Deep Focus",
-    description: "You are in a great state for deep work. Let's tackle your most important task.",
+    description:
+      "You are in a great state for deep work. Let's tackle your most important task.",
     color: "#9B7EB8",
   },
   Ground: {
     label: "Ground",
-    description: "Having trouble focusing? Let's do a quick sound reset to get back on track.",
+    description:
+      "Having trouble focusing? Let's do a quick sound reset to get back on track.",
     color: "#8A9EC2",
   },
   Reset: {
     label: "Reset",
-    description: "You seem overwhelmed. Let's take a deep breath together or talk it out.",
+    description:
+      "You seem overwhelmed. Let's take a deep breath together or talk it out.",
     color: "#C2A87E",
   },
   Start: {
     label: "Start",
-    description: "Feeling restless? It might be a good time for a quick movement break.",
+    description:
+      "Feeling restless? It might be a good time for a quick movement break.",
     color: "#8FA87E",
   },
   Flow: {
     label: "Flow",
     description: "Energy feeling low? Let's start with something very simple.",
     color: "#7EB8A4",
+  },
+};
+
+export const FLAG_META: Record<
+  Exclude<CalibrationFlag, null>,
+  { label: string; suggestion: string }
+> = {
+  "Delayed Reward": {
+    label: "Delayed Reward",
+    suggestion:
+      "You can tolerate complexity and delayed payoff. Take on something layered — a strategy problem, creative arc, or multi-step task.",
+  },
+  Groove: {
+    label: "Groove",
+    suggestion:
+      "Your body wants to move. Try walking, stretching, or a short physical reset before settling into focused work.",
+  },
+  "No-Pulse": {
+    label: "No-Pulse",
+    suggestion:
+      "You're in a cerebral, open state. Lean into writing, planning, conceptual thinking, or design work.",
+  },
+  "Deep Reset Bridge": {
+    label: "Deep Reset Bridge",
+    suggestion:
+      "Start with a short reset to discharge, then transition into Deep Focus when you feel ready.",
   },
 };

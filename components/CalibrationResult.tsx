@@ -6,18 +6,27 @@ import {
   LOOP_META,
   FLAG_META,
 } from "@/store/calibrationStore";
-import { apiStartFocusSession, getTrackUrl } from "@/lib/calibrationApi";
-import { TRACK_IDS } from "@/types/calibration";
+import { apiStartFocusSession } from "@/lib/calibrationApi";
 import type { LoopState } from "@/types/calibration";
 
-// Preview track per loop — use a real calibration clip that matches the mood
-const LOOP_PREVIEW_TRACK: Record<LoopState, string> = {
-  "Deep Focus": getTrackUrl(TRACK_IDS.clip_8),
-  Ground: getTrackUrl(TRACK_IDS.clip_5),
-  Reset: getTrackUrl(TRACK_IDS.clip_2),
-  Start: getTrackUrl(TRACK_IDS.clip_3),
-  Flow: getTrackUrl(TRACK_IDS.clip_10),
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+
+const SOUNDSCAPE_FILES: Record<LoopState, string> = {
+  Reset: "Soundscape - Reset Mode_voicechange.mp3",
+  Start: "Soundscape - Start Mode.mp3",
+  "Deep Focus": "Soundscape - Deep Focus Mode - 3 min Loop.mp3",
+  Flow: "Soundscape - Flow Mode Mode - 3 min Loop.mp3",
+  Ground: "Soundscape - Ground Mode - 3 min Loop.mp3",
 };
+
+const LOOP_PREVIEW_TRACK: Record<LoopState, string> = Object.fromEntries(
+  (Object.entries(SOUNDSCAPE_FILES) as [LoopState, string][]).map(
+    ([loop, file]) => [
+      loop,
+      `${SUPABASE_URL}/storage/v1/object/public/focus-loops/${encodeURIComponent(file)}`,
+    ],
+  ),
+) as Record<LoopState, string>;
 
 interface Props {
   onRecalibrate: () => void;

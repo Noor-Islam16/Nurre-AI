@@ -2,22 +2,23 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useCalibrationStore, LOOP_META } from "@/store/calibrationStore";
-import { apiEndFocusSession, getTrackUrl } from "@/lib/calibrationApi";
-import { TRACK_IDS } from "@/types/calibration";
+import { apiEndFocusSession } from "@/lib/calibrationApi";
 import type { LoopState } from "@/types/calibration";
 
-// Placeholder tracks while real focus loops aren't uploaded yet
-// Swap getTrackUrl() → getLoopUrl() once focus-loops bucket is populated
-const LOOP_PLACEHOLDER_TRACK: Record<LoopState, string> = {
-  "Deep Focus": getTrackUrl(TRACK_IDS.clip_8),
-  Ground: getTrackUrl(TRACK_IDS.clip_5),
-  Reset: getTrackUrl(TRACK_IDS.clip_2),
-  Start: getTrackUrl(TRACK_IDS.clip_3),
-  Flow: getTrackUrl(TRACK_IDS.clip_10),
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+
+// Exact filenames as uploaded to focus-loops bucket
+const SOUNDSCAPE_FILES: Record<LoopState, string> = {
+  Reset: "Soundscape - Reset Mode_voicechange.mp3",
+  Start: "Soundscape - Start Mode.mp3",
+  "Deep Focus": "Soundscape - Deep Focus Mode - 3 min Loop.mp3",
+  Flow: "Soundscape - Flow Mode Mode - 3 min Loop.mp3",
+  Ground: "Soundscape - Ground Mode - 3 min Loop.mp3",
 };
 
 function resolveLoopUrl(loop: LoopState): string {
-  return LOOP_PLACEHOLDER_TRACK[loop];
+  const filename = SOUNDSCAPE_FILES[loop];
+  return `${SUPABASE_URL}/storage/v1/object/public/focus-loops/${encodeURIComponent(filename)}`;
 }
 
 export function FocusMode() {
@@ -31,6 +32,8 @@ export function FocusMode() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<number>(Date.now());
+  const pausedAtRef = useRef<number | null>(null); // timestamp when paused
+  const elapsedAtPauseRef = useRef<number>(0); // elapsed ms banked before pause
 
   const loop = (outputs?.assigned_loop ?? "Start") as LoopState;
   const meta = LOOP_META[loop];
@@ -66,8 +69,15 @@ export function FocusMode() {
       });
 
     startTimeRef.current = Date.now();
+    pausedAtRef.current = null;
+    elapsedAtPauseRef.current = 0;
     timerRef.current = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000));
+      setElapsed(
+        Math.floor(
+          (elapsedAtPauseRef.current + Date.now() - startTimeRef.current) /
+            1000,
+        ),
+      );
     }, 1000);
 
     return () => {
@@ -88,6 +98,9 @@ export function FocusMode() {
     if (isPlaying) {
       audio.pause();
       setIsPlaying(false);
+      // Bank elapsed time so timer freezes at correct value
+      elapsedAtPauseRef.current += Date.now() - startTimeRef.current;
+      pausedAtRef.current = Date.now();
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
@@ -98,8 +111,17 @@ export function FocusMode() {
         .play()
         .then(() => {
           setIsPlaying(true);
+          // Resume counting from where we left off
+          startTimeRef.current = Date.now();
           timerRef.current = setInterval(() => {
-            setElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000));
+            setElapsed(
+              Math.floor(
+                (elapsedAtPauseRef.current +
+                  Date.now() -
+                  startTimeRef.current) /
+                  1000,
+              ),
+            );
           }, 1000);
         })
         .catch((err) => {

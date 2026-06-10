@@ -8,7 +8,6 @@ interface Props {
 export function CalibrationIntro({ onBegin, loading }: Props) {
   return (
     <div className="nuree-card fade-up" style={{ textAlign: "center" }}>
-      {/* Waveform icon */}
       <div className="fade-up fade-up-delay-1" style={{ marginBottom: "2rem" }}>
         <WaveformIcon />
       </div>
@@ -34,11 +33,10 @@ export function CalibrationIntro({ onBegin, loading }: Props) {
         style={{ maxWidth: "380px", margin: "0 auto 2rem" }}
       >
         This quick calibration helps Nuree generate soundscapes tuned to your
-        brain. Five short comparisons — trust your instinct, there are no right
+        brain. A few short comparisons — trust your instinct, there are no right
         or wrong answers.
       </p>
 
-      {/* Headphones recommended badge */}
       <div
         className="fade-up fade-up-delay-3"
         style={{
@@ -69,7 +67,7 @@ export function CalibrationIntro({ onBegin, loading }: Props) {
           marginBottom: "2.5rem",
         }}
       >
-        {["5 pairs", "~3 minutes"].map((tag) => (
+        {["~1 minute"].map((tag) => (
           <span
             key={tag}
             style={{
@@ -164,7 +162,7 @@ function WaveformIcon() {
           fill="#059669"
           opacity="0.7"
           style={{
-            animation: `barPulse 1.8s ease-in-out infinite alternate`,
+            animation: "barPulse 1.8s ease-in-out infinite alternate",
             animationDelay: bar.delay,
           }}
         />

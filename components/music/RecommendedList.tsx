@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { Play, Pause, Star } from 'lucide-react'
+import { Play, Pause, Star, Heart } from 'lucide-react'
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -13,12 +13,14 @@ export type RecommendedListProps = {
   tracks: MusicTrack[]
   title?: string
   description?: string
+  onToggleLike?: (track: MusicTrack) => void
 }
 
 export function RecommendedList({
   tracks,
   title = 'Recommended for you',
   description = 'Coach-picked tracks to jump back into focus quickly.',
+  onToggleLike,
 }: RecommendedListProps) {
   const { currentTrack, isPlaying, progress, duration, play, pause, resume } = useMusicPlayer()
 
@@ -70,7 +72,7 @@ export function RecommendedList({
             <div
               key={track.id}
               className={cn(
-                'group relative flex items-center gap-4 rounded-md border border-sky-200 bg-background/80 px-4 py-3 transition-colors',
+                'group relative flex items-center justify-between gap-4 rounded-md border border-sky-200 bg-background/80 px-4 py-3 transition-colors',
                 isCurrent ? 'shadow-inner shadow-sky-200' : 'hover:bg-sky-50'
               )}
             >
@@ -81,28 +83,46 @@ export function RecommendedList({
                   style={{ width: `${percentComplete * 100}%` }}
                 />
               )}
-              <Button
-                type="button"
-                size="icon"
-                variant="outline"
-                aria-pressed={isCurrentlyPlaying}
-                aria-label={ariaLabel}
-                onClick={() => handleToggle(track, isCurrent, isCurrentlyPlaying)}
-                className={cn(
-                  'hover:bg-sky-100 hover:border-sky-300 hover:text-sky-700',
-                  isCurrentlyPlaying && 'bg-sky-500 text-white border-sky-600 hover:bg-sky-600 hover:border-sky-600'
-                )}
-              >
-                {isCurrentlyPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
-              </Button>
-              <div className="flex min-w-0 flex-1 flex-col">
-                <p className="truncate text-sm font-medium text-foreground">{track.title}</p>
-                <p className="text-xs text-muted-foreground">
-                  {track.hz_label ? <span>{track.hz_label}</span> : null}
-                  {track.hz_label && durationLabel !== '—' ? <span className="mx-2">•</span> : null}
-                  {durationLabel !== '—' ? <span>{durationLabel}</span> : null}
-                </p>
+              <div className="flex items-center gap-4 flex-1 min-w-0">
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="outline"
+                  aria-pressed={isCurrentlyPlaying}
+                  aria-label={ariaLabel}
+                  onClick={() => handleToggle(track, isCurrent, isCurrentlyPlaying)}
+                  className={cn(
+                    'hover:bg-sky-100 hover:border-sky-300 hover:text-sky-700 flex-shrink-0',
+                    isCurrentlyPlaying && 'bg-sky-500 text-white border-sky-600 hover:bg-sky-600 hover:border-sky-600'
+                  )}
+                >
+                  {isCurrentlyPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+                </Button>
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <p className="truncate text-sm font-medium text-foreground">{track.title}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {track.hz_label ? <span>{track.hz_label}</span> : null}
+                    {track.hz_label && durationLabel !== '—' ? <span className="mx-2">•</span> : null}
+                    {durationLabel !== '—' ? <span>{durationLabel}</span> : null}
+                  </p>
+                </div>
               </div>
+              
+              {onToggleLike && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onToggleLike(track)
+                  }}
+                  className="text-muted-foreground hover:text-rose-500 hover:bg-rose-50/50 flex-shrink-0"
+                  title={track.liked ? "Remove from Library" : "Add to Library"}
+                >
+                  <Heart className={cn("h-5 w-5 transition-all duration-200 active:scale-75", track.liked ? "fill-rose-500 text-rose-500" : "")} />
+                </Button>
+              )}
             </div>
           )
         })}

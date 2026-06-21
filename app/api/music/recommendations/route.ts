@@ -29,6 +29,7 @@ type TrackPayload = {
   hz_label?: string | null
   duration_sec?: number | null
   signedUntil?: string
+  liked?: boolean
 }
 
 type RecommendationItem = {
@@ -47,16 +48,25 @@ export async function GET(_req: NextRequest) {
 
     const admin = createServiceClient()
 
-    const { data, error } = await admin
-      .from('coach_recommendations')
-      .select('track_id, note, created_at, music:music_tracks(id,title,url,category,hz_label,duration_sec)')
-      .eq('user_id', auth.user.id)
-      .order('created_at', { ascending: false })
+    const [recsResult, likedResult] = await Promise.all([
+      admin
+        .from('coach_recommendations')
+        .select('track_id, note, created_at, music:music_tracks(id,title,url,category,hz_label,duration_sec)')
+        .eq('user_id', auth.user.id)
+        .order('created_at', { ascending: false }),
+      admin
+        .from('user_liked_tracks')
+        .select('track_id')
+        .eq('user_id', auth.user.id)
+    ])
 
+    const { data, error } = recsResult
     if (error) {
       console.error('recommendations query error:', error)
       return NextResponse.json({ error: 'Failed to load recommendations' }, { status: 500 })
     }
+
+    const likedSet = new Set((likedResult.data || []).map((r) => r.track_id))
 
     const ttlHours = Number(process.env.MUSIC_SIGN_TTL_HOURS || 12)
     const ttlSeconds = Number.isFinite(ttlHours) && ttlHours > 0 ? Math.floor(ttlHours * 3600) : 12 * 3600
@@ -67,6 +77,7 @@ export async function GET(_req: NextRequest) {
       const musicArray = row.music as any[] | null
       if (!musicArray || musicArray.length === 0) continue
       const track = musicArray[0]
+      const isLiked = likedSet.has(track.id)
       const isAbsolute = /^https?:\/\//i.test(track.url)
 
       if (isAbsolute) {
@@ -78,6 +89,7 @@ export async function GET(_req: NextRequest) {
             category: track.category,
             hz_label: track.hz_label ?? undefined,
             duration_sec: track.duration_sec ?? undefined,
+            liked: isLiked,
           },
           note: row.note,
           createdAt: row.created_at,
@@ -108,6 +120,7 @@ export async function GET(_req: NextRequest) {
             hz_label: track.hz_label ?? undefined,
             duration_sec: track.duration_sec ?? undefined,
             signedUntil: new Date(Date.now() + ttlSeconds * 1000).toISOString(),
+            liked: isLiked,
           },
           note: row.note,
           createdAt: row.created_at,
@@ -122,7 +135,7 @@ export async function GET(_req: NextRequest) {
       status: 200,
       headers: {
         'Content-Type': 'application/json',
-        'Cache-Control': 'private, max-age=300',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
       },
     })
   } catch (err: any) {

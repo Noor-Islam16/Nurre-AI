@@ -55,7 +55,7 @@ function brainModeToLoop(mode: BrainMode): LoopState {
 // HIGH branch (chose clip_10 = B in pair 1):
 //   → clip_7 vs clip_9
 //     → chose clip_7 (A):  clip_7 vs clip_8
-//         → chose clip_7 (A): Deep Focus + Deep Reset Bridge
+//         → chose clip_7 (A): Deep Focus + Deep Reset Mode
 //         → chose clip_8 (B): Deep Focus
 //     → chose clip_9 (B):  clip_9 vs clip_10
 //         → chose clip_9  (A): Flow + No-Pulse
@@ -120,7 +120,7 @@ export const CALIBRATION_TREE: TreeNode = {
       label: "Deep Focus clarity",
       track_a_id: TRACK_IDS.clip_7,
       track_b_id: TRACK_IDS.clip_8,
-      on_A: leaf("Deep Focus", "Deep Reset Bridge", [10, 7, 7]),
+      on_A: leaf("Deep Focus", "Deep Reset Mode", [10, 7, 7]),
       on_B: leaf("Deep Focus", null, [10, 7, 8]),
     },
 

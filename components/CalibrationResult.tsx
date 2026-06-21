@@ -8,6 +8,7 @@ import {
 } from "@/store/calibrationStore";
 import { apiStartFocusSession } from "@/lib/calibrationApi";
 import type { LoopState } from "@/types/calibration";
+import { useMusicPlayer } from "@/components/music/Player";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 
@@ -35,6 +36,7 @@ interface Props {
 
 export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
   const { outputs } = useCalibrationStore();
+  const { isPlaying: isLibraryPlaying, pause: pauseLibrary } = useMusicPlayer();
   const [entering, setEntering] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -66,7 +68,15 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
     }
 
     setPreviewError(null);
-    const audio = new Audio(LOOP_PREVIEW_TRACK[loop]);
+    if (isLibraryPlaying) {
+      pauseLibrary();
+    }
+
+    const trackUrl = outputs?.flag === "Deep Reset Mode"
+      ? `${SUPABASE_URL}/storage/v1/object/public/focus-loops/${encodeURIComponent("Soundscape - Deep Reset Mode.mp3")}`
+      : LOOP_PREVIEW_TRACK[loop];
+
+    const audio = new Audio(trackUrl);
     audio.volume = 0.75;
     previewRef.current = audio;
 

@@ -18,6 +18,8 @@ export type MusicTrack = {
   producer_name?: string | null
   producer_url?: string | null
   signedUntil?: string
+  liked?: boolean
+  brain_modes?: string[]
 }
 
 type PlayerState = {

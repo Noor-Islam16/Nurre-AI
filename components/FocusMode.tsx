@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useCalibrationStore, LOOP_META } from "@/store/calibrationStore";
 import { apiEndFocusSession } from "@/lib/calibrationApi";
-import type { LoopState } from "@/types/calibration";
+import type { LoopState, CalibrationFlag } from "@/types/calibration";
+import type { MusicTrack } from "@/components/music/Player";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 
@@ -16,7 +17,10 @@ const SOUNDSCAPE_FILES: Record<LoopState, string> = {
   Ground: "Soundscape - Ground Mode - 3 min Loop.mp3",
 };
 
-function resolveLoopUrl(loop: LoopState): string {
+function resolveLoopUrl(loop: LoopState, flag: CalibrationFlag): string {
+  if (flag === "Deep Reset Mode") {
+    return `${SUPABASE_URL}/storage/v1/object/public/focus-loops/${encodeURIComponent("Soundscape - Deep Reset Mode.mp3")}`;
+  }
   const filename = SOUNDSCAPE_FILES[loop];
   return `${SUPABASE_URL}/storage/v1/object/public/focus-loops/${encodeURIComponent(filename)}`;
 }
@@ -28,6 +32,8 @@ export function FocusMode() {
   const [elapsed, setElapsed] = useState(0);
   const [ending, setEnding] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
+  const [preferredTrack, setPreferredTrack] = useState<MusicTrack | null>(null);
+  const [loadingTracks, setLoadingTracks] = useState(true);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -36,11 +42,48 @@ export function FocusMode() {
   const elapsedAtPauseRef = useRef<number>(0); // elapsed ms banked before pause
 
   const loop = (outputs?.assigned_loop ?? "Start") as LoopState;
+  const flag = outputs?.flag ?? null;
   const meta = LOOP_META[loop];
   const loopColor = "#059669";
-  const loopUrl = resolveLoopUrl(loop);
+  const loopUrl = preferredTrack ? preferredTrack.url : resolveLoopUrl(loop, flag);
 
   useEffect(() => {
+    let active = true;
+    async function checkPreferences() {
+      try {
+        const res = await fetch("/api/music/tracks");
+        if (!res.ok) return;
+        const tracks: MusicTrack[] = await res.json();
+        if (!active) return;
+
+        // Find liked tracks that match the current calibrated brain mode
+        const matched = tracks.filter(t => 
+          t.liked && 
+          t.brain_modes && 
+          t.brain_modes.includes(loop)
+        );
+
+        if (matched.length > 0) {
+          // Select a random matched track
+          const randomTrack = matched[Math.floor(Math.random() * matched.length)];
+          setPreferredTrack(randomTrack);
+        }
+      } catch (err) {
+        console.error("Failed to load preferred focus tracks:", err);
+      } finally {
+        if (active) {
+          setLoadingTracks(false);
+        }
+      }
+    }
+    checkPreferences();
+    return () => {
+      active = false;
+    };
+  }, [loop]);
+
+  useEffect(() => {
+    if (loadingTracks) return;
     setAudioError(null);
 
     const audio = new Audio();
@@ -85,7 +128,7 @@ export function FocusMode() {
       audio.src = "";
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [loopUrl]);
+  }, [loopUrl, loadingTracks]);
 
   useEffect(() => {
     if (audioRef.current) audioRef.current.volume = volume;
@@ -168,7 +211,7 @@ export function FocusMode() {
         className="nuree-title fade-up fade-up-delay-1"
         style={{ marginBottom: "0.5rem", color: loopColor }}
       >
-        {loop}
+        {preferredTrack ? `${loop} · ${preferredTrack.title}` : loop}
       </h1>
       <p
         className="nuree-body fade-up fade-up-delay-2"

@@ -12,7 +12,7 @@ import { CategoryCard } from '@/components/music/category-card'
 import { CalmBreathing } from '@/components/features/calm-breathing'
 import { BreathingHistory } from '@/components/features/breathing-history'
 import { useCalmBreathing } from '@/hooks/useCalmBreathing'
-import { Music, Wind, ChevronLeft } from 'lucide-react'
+import { Music, Wind, Heart, ChevronLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 type CategoryKey = 'focus' | 'calm' | 'productivity' | 'sleep'
@@ -46,6 +46,59 @@ export default function CalmPage() {
   const { sessions, isLoadingSessions } = useCalmBreathing()
   const { currentTrack } = useMusicPlayer()
 
+  const allLikedTracks = React.useMemo(() => {
+    const unique = new Map<string, MusicTrack>()
+    recommended.forEach(t => {
+      if (t.liked) unique.set(t.id, t)
+    })
+    Object.values(categoryTracks).forEach(list => {
+      list.forEach(t => {
+        if (t.liked) unique.set(t.id, t)
+      })
+    })
+    return Array.from(unique.values())
+  }, [recommended, categoryTracks])
+
+  const handleToggleLike = React.useCallback(async (track: MusicTrack) => {
+    const nextLiked = !track.liked
+
+    const updateTrackList = (list: MusicTrack[]) =>
+      list.map(t => (t.id === track.id ? { ...t, liked: nextLiked } : t))
+
+    setRecommended(prev => updateTrackList(prev))
+    setCategoryTracks(prev => {
+      const next = { ...prev }
+      ;(Object.keys(next) as CategoryKey[]).forEach(k => {
+        next[k] = updateTrackList(next[k])
+      })
+      return next
+    })
+
+    try {
+      const response = await fetch('/api/music/like', {
+        method: nextLiked ? 'POST' : 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trackId: track.id }),
+      })
+      if (!response.ok) {
+        throw new Error('Failed to toggle like')
+      }
+    } catch (err) {
+      console.error('Error toggling like:', err)
+      const revertTrackList = (list: MusicTrack[]) =>
+        list.map(t => (t.id === track.id ? { ...t, liked: track.liked } : t))
+
+      setRecommended(prev => revertTrackList(prev))
+      setCategoryTracks(prev => {
+        const next = { ...prev }
+        ;(Object.keys(next) as CategoryKey[]).forEach(k => {
+          next[k] = revertTrackList(next[k])
+        })
+        return next
+      })
+    }
+  }, [])
+
   React.useEffect(() => {
     let canceled = false
     const controller = new AbortController()
@@ -59,12 +112,14 @@ export default function CalmPage() {
           method: 'GET',
           signal: controller.signal,
           headers: { 'Content-Type': 'application/json' },
+          cache: 'no-store',
         })
 
         const categoryRequests = CATEGORY_ORDER.map(({ key }) =>
           fetch(`/api/music/tracks?category=${encodeURIComponent(key)}`, {
             method: 'GET',
             signal: controller.signal,
+            cache: 'no-store',
           })
         )
 
@@ -120,10 +175,14 @@ export default function CalmPage() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100 px-4 md:px-6 lg:px-8 pt-2 pb-8">
       <div className="w-full max-w-[min(90vw,1600px)] mx-auto flex flex-col gap-6 pb-20">
         <Tabs defaultValue="music" className="w-full">
-          <TabsList className="grid w-full max-w-md mx-auto grid-cols-2 mb-6">
+          <TabsList className="grid w-full max-w-lg mx-auto grid-cols-3 mb-6">
             <TabsTrigger value="music" className="flex items-center gap-2">
               <Music className="w-4 h-4" />
               <span>Music</span>
+            </TabsTrigger>
+            <TabsTrigger value="library" className="flex items-center gap-2">
+              <Heart className="w-4 h-4" />
+              <span>Library</span>
             </TabsTrigger>
             <TabsTrigger value="breathing" className="flex items-center gap-2">
               <Wind className="w-4 h-4" />
@@ -163,7 +222,7 @@ export default function CalmPage() {
                   <>
                     {/* AI Recommendations */}
                     {recommended.length > 0 && (
-                      <RecommendedList tracks={recommended} />
+                      <RecommendedList tracks={recommended} onToggleLike={handleToggleLike} />
                     )}
 
                     {/* Category Cards Grid - 2x2 when no player, 4 cols when player visible */}
@@ -203,12 +262,31 @@ export default function CalmPage() {
                         title={title}
                         tracks={categoryTracks[key]}
                         emptyMessage={emptyMessage}
+                        onToggleLike={handleToggleLike}
                       />
                     ))}
                   </>
                 )}
               </div>
             )}
+          </TabsContent>
+
+          <TabsContent value="library">
+            <div className="flex flex-col gap-6">
+              {/* Music Hero - Shows when track is selected */}
+              <AnimatePresence>
+                {currentTrack && (
+                  <MusicHero />
+                )}
+              </AnimatePresence>
+
+              <TrackList
+                title="My Favorite Tracks"
+                tracks={allLikedTracks}
+                emptyMessage="You haven't liked any tracks yet. Click the heart icon on any track to add it to your library!"
+                onToggleLike={handleToggleLike}
+              />
+            </div>
           </TabsContent>
 
           <TabsContent value="breathing">

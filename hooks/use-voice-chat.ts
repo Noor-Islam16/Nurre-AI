@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { VoiceConversation } from '@elevenlabs/client'
 import { createClient } from '@/lib/supabase/client'
 import { queueEmbeddingJob } from '@/lib/ai/vector/enqueue-embedding-job'
+import { toast } from '@/components/ui/use-toast'
 import { useVoiceStore, VoiceMode } from '@/store/voice-store'
 import { usePreferenceStore, voiceSpeedToRate } from '@/store/preference-store'
 import { conversationManager } from '@/lib/voice/conversation-manager'
@@ -768,8 +769,11 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
         console.error('[Voice] Full error object:', err)
         // Don't set micPermissionError for non-permission errors
         // Instead, we should show this error differently
-        // For now, alert the user so they can see it
-        alert(`Voice session error: ${errorMsg}`)
+        // For now, toast the user so they can see it
+        toast({
+          title: 'Voice Session Error',
+          description: errorMsg,
+        })
       }
 
       stopSessionRef.current()

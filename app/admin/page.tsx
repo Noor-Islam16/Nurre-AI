@@ -352,6 +352,25 @@ export default function AdminDashboard() {
             </div>
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Database className="h-4 w-4" />
+              Music Library
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span>Manage Tracks</span>
+              </div>
+              <Button className="w-full mt-2" variant="outline" asChild>
+                <Link href="/admin/tracks">Tag Soundscapes</Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Database Cleanup Monitor */}

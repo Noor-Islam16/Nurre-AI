@@ -167,8 +167,13 @@ export const FLAG_META: Record<
     suggestion:
       "You're in a cerebral, open state. Lean into writing, planning, conceptual thinking, or design work.",
   },
+  "Deep Reset Mode": {
+    label: "Deep Reset Mode",
+    suggestion:
+      "Start with a short reset to discharge, then transition into Deep Focus when you feel ready.",
+  },
   "Deep Reset Bridge": {
-    label: "Deep Reset Bridge",
+    label: "Deep Reset Mode",
     suggestion:
       "Start with a short reset to discharge, then transition into Deep Focus when you feel ready.",
   },

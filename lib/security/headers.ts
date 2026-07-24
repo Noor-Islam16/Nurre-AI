@@ -54,7 +54,7 @@ export const getContentSecurityPolicy = (nonce?: string) => {
       "https://models.readyplayer.me", // Ready Player Me 3D avatars
       "blob:", // Required for Three.js/WebGL blob URLs
     ],
-    'media-src': ["'self'", "blob:", "https://*.supabase.co"],
+    'media-src': ["'self'", "blob:", "https://*.supabase.co", "https://api.elevenlabs.io", "wss://api.elevenlabs.io"],
     'object-src': ["'none'"],
     'base-uri': ["'self'"],
     'form-action': ["'self'"],

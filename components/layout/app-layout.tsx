@@ -15,6 +15,7 @@ import { FeatureTourListener } from '@/components/features/feature-tour-listener
 import { StickyFocusController } from '@/components/features/sticky-focus-controller'
 import { StickyMusicPlayer } from '@/components/features/sticky-music-player'
 import { FloatingMicButton } from '@/components/features/floating-mic-button'
+import { PageTransitionProvider } from '@/components/providers/PageTransitionProvider'
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -195,10 +196,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       </div>
       
       {/* Main Content */}
-      <main className={`flex-1 transition-all duration-300 ${marginClass}`}>
+      <main className={`flex-1 transition-all duration-300 relative ${marginClass}`}>
         <div className="md:hidden h-16" /> {/* Spacer for mobile header */}
         <div className={`${bannerHeight} transition-all duration-300`} /> {/* Dynamic spacer for sticky banners - prevents layout shifts */}
-        {children}
+        <PageTransitionProvider>
+          {children}
+        </PageTransitionProvider>
       </main>
 
       {/* Global Components */}

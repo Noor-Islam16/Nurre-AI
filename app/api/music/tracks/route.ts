@@ -18,6 +18,7 @@ type TrackRow = {
   has_voice?: boolean | null
   producer_name?: string | null
   producer_url?: string | null
+  brain_modes?: string[] | null
 }
 
 type TrackResponse = {
@@ -31,6 +32,8 @@ type TrackResponse = {
   producer_name?: string | null
   producer_url?: string | null
   signedUntil?: string
+  liked?: boolean
+  brain_modes?: string[]
 }
 
 export async function GET(req: NextRequest) {
@@ -53,7 +56,7 @@ export async function GET(req: NextRequest) {
 
     let query = supabase
       .from('music_tracks')
-      .select('id,title,url,category,hz_label,duration_sec,has_voice,producer_name,producer_url')
+      .select('id,title,url,category,hz_label,duration_sec,has_voice,producer_name,producer_url,brain_modes')
       .eq('is_active', true)
       .order('title', { ascending: true })
 
@@ -61,11 +64,21 @@ export async function GET(req: NextRequest) {
       query = query.eq('category', category)
     }
 
-    const { data: rows, error } = await query
+    const [tracksResult, likedResult] = await Promise.all([
+      query,
+      supabase
+        .from('user_liked_tracks')
+        .select('track_id')
+        .eq('user_id', auth.user.id)
+    ])
+
+    const { data: rows, error } = tracksResult
     if (error) {
       console.error('music_tracks query error:', error)
       return NextResponse.json({ error: 'Failed to load tracks' }, { status: 500 })
     }
+
+    const likedSet = new Set((likedResult.data || []).map((r) => r.track_id))
 
     const ttlHours = Number(process.env.MUSIC_SIGN_TTL_HOURS || 12)
     const ttlSeconds = Number.isFinite(ttlHours) && ttlHours > 0 ? Math.floor(ttlHours * 3600) : 12 * 3600
@@ -75,6 +88,7 @@ export async function GET(req: NextRequest) {
 
     const results: TrackResponse[] = []
     for (const row of (rows || []) as TrackRow[]) {
+      const isLiked = likedSet.has(row.id)
       const isAbsolute = /^https?:\/\//i.test(row.url)
       if (isAbsolute) {
         results.push({
@@ -87,6 +101,8 @@ export async function GET(req: NextRequest) {
           has_voice: row.has_voice ?? undefined,
           producer_name: row.producer_name ?? undefined,
           producer_url: row.producer_url ?? undefined,
+          liked: isLiked,
+          brain_modes: row.brain_modes ?? [],
         })
         continue
       }
@@ -118,6 +134,8 @@ export async function GET(req: NextRequest) {
           producer_name: row.producer_name ?? undefined,
           producer_url: row.producer_url ?? undefined,
           signedUntil: new Date(Date.now() + ttlSeconds * 1000).toISOString(),
+          liked: isLiked,
+          brain_modes: row.brain_modes ?? [],
         })
       } catch (e: any) {
         console.warn('Signing exception; filtering out track', { id: row.id, err: e?.message })
@@ -129,7 +147,7 @@ export async function GET(req: NextRequest) {
       status: 200,
       headers: {
         'Content-Type': 'application/json',
-        'Cache-Control': 'private, max-age=300',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
       },
     })
   } catch (err: any) {

@@ -7,6 +7,7 @@ export type CalibrationFlag =
   | "Delayed Reward"
   | "Groove"
   | "No-Pulse"
+  | "Deep Reset Mode"
   | "Deep Reset Bridge"
   | null;
 export type LoopState = "Deep Focus" | "Ground" | "Reset" | "Start" | "Flow";

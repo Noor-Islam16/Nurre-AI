@@ -78,7 +78,7 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
     }
 
     const trackUrl = outputs?.flag === "Deep Reset Mode" || outputs?.flag === "Deep Reset Bridge"
-      ? `${SUPABASE_URL}/storage/v1/object/public/focus-loops/${encodeURIComponent("Soundscape - Deep Reset Mode.mp3")}`
+      ? `${SUPABASE_URL}/storage/v1/object/public/focus-loops/${encodeURIComponent("DEEP RESET SOUNDSCAPE 5 mins Breathing RESET + 10 mins Deep Focus + 5 mins Rest before LOOPING.mp3")}`
       : LOOP_PREVIEW_TRACK[loop];
 
     const audio = new Audio(trackUrl);

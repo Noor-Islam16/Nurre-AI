@@ -35,8 +35,8 @@ const SOUNDSCAPE_FILES = {
 };
 
 function resolveLoopUrl(loop: string, flag: string | null): string {
-  if (flag === "Deep Reset Mode") {
-    return `${SUPABASE_URL}/storage/v1/object/public/focus-loops/${encodeURIComponent("Soundscape - Deep Reset Mode.mp3")}`;
+  if (flag === "Deep Reset Mode" || flag === "Deep Reset Bridge") {
+    return `${SUPABASE_URL}/storage/v1/object/public/focus-loops/${encodeURIComponent("DEEP RESET SOUNDSCAPE 5 mins Breathing RESET + 10 mins Deep Focus + 5 mins Rest before LOOPING.mp3")}`;
   }
   const filename = SOUNDSCAPE_FILES[loop as keyof typeof SOUNDSCAPE_FILES];
   return `${SUPABASE_URL}/storage/v1/object/public/focus-loops/${encodeURIComponent(filename || "Soundscape - Start Mode.mp3")}`;

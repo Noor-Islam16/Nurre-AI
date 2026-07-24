@@ -9,6 +9,7 @@ import { DurationSegmented } from './duration-segmented'
 import { SmartRecommendation } from './smart-recommendation'
 import { useUserStore } from '@/store/user-store'
 import { getPersonality, type PersonalityId } from '@/lib/config/personalities'
+import { SoundsPopover } from './sounds-popover'
 
 interface FocusSetupProps {
   duration: number
@@ -86,6 +87,11 @@ export function FocusSetup({
             onChange={onDurationChange}
             disabled={false}
           />
+
+          {/* Sound selection */}
+          <div className="w-full">
+            <SoundsPopover />
+          </div>
 
           {/* Start Button */}
           <Button

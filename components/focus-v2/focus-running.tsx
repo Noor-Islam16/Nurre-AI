@@ -5,6 +5,7 @@ import { TimerDisplayV2 } from './timer-display-v2'
 import { LinearProgress } from './linear-progress'
 import { InlineNudge } from './inline-nudge'
 import { FocusControls } from './focus-controls'
+import { SoundsPopover } from './sounds-popover'
 
 interface FocusRunningProps {
   timeDisplay: string
@@ -70,6 +71,11 @@ export function FocusRunning({
               timeRemaining={timeRemaining}
               isPaused={isPaused}
             />
+          </div>
+
+          {/* Sound selection */}
+          <div className="w-full max-w-[180px]">
+            <SoundsPopover />
           </div>
 
           {/* Focus Controls */}

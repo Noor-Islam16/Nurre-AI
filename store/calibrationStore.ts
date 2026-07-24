@@ -172,4 +172,9 @@ export const FLAG_META: Record<
     suggestion:
       "Start with a short reset to discharge, then transition into Deep Focus when you feel ready.",
   },
+  "Deep Reset Bridge": {
+    label: "Deep Reset Mode",
+    suggestion:
+      "Start with a short reset to discharge, then transition into Deep Focus when you feel ready.",
+  },
 };

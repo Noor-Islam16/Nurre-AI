@@ -18,7 +18,7 @@ const SOUNDSCAPE_FILES: Record<LoopState, string> = {
 };
 
 function resolveLoopUrl(loop: LoopState, flag: CalibrationFlag): string {
-  if (flag === "Deep Reset Mode") {
+  if (flag === "Deep Reset Mode" || flag === "Deep Reset Bridge") {
     return `${SUPABASE_URL}/storage/v1/object/public/focus-loops/${encodeURIComponent("Soundscape - Deep Reset Mode.mp3")}`;
   }
   const filename = SOUNDSCAPE_FILES[loop];
@@ -34,6 +34,7 @@ export function FocusMode() {
   const [audioError, setAudioError] = useState<string | null>(null);
   const [preferredTrack, setPreferredTrack] = useState<MusicTrack | null>(null);
   const [loadingTracks, setLoadingTracks] = useState(true);
+  const [matchedTracks, setMatchedTracks] = useState<MusicTrack[]>([]);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -45,6 +46,8 @@ export function FocusMode() {
   const flag = outputs?.flag ?? null;
   const meta = LOOP_META[loop];
   const loopColor = "#059669";
+  const isDeepReset = flag === "Deep Reset Mode" || flag === "Deep Reset Bridge";
+  const displayLoop = isDeepReset ? "Deep Reset Mode" : loop;
   const loopUrl = preferredTrack ? preferredTrack.url : resolveLoopUrl(loop, flag);
 
   useEffect(() => {
@@ -56,16 +59,18 @@ export function FocusMode() {
         const tracks: MusicTrack[] = await res.json();
         if (!active) return;
 
-        // Find liked tracks that match the current calibrated brain mode
+        // Find all tracks that match the current calibrated brain mode
         const matched = tracks.filter(t => 
-          t.liked && 
           t.brain_modes && 
           t.brain_modes.includes(loop)
         );
+        setMatchedTracks(matched);
 
-        if (matched.length > 0) {
-          // Select a random matched track
-          const randomTrack = matched[Math.floor(Math.random() * matched.length)];
+        // Find liked tracks that match the current calibrated brain mode for default auto-assignment
+        const likedMatched = matched.filter(t => t.liked);
+        if (likedMatched.length > 0) {
+          // Select a random liked matched track by default
+          const randomTrack = likedMatched[Math.floor(Math.random() * likedMatched.length)];
           setPreferredTrack(randomTrack);
         }
       } catch (err) {
@@ -211,7 +216,7 @@ export function FocusMode() {
         className="nuree-title fade-up fade-up-delay-1"
         style={{ marginBottom: "0.5rem", color: loopColor }}
       >
-        {preferredTrack ? `${loop} · ${preferredTrack.title}` : loop}
+        {preferredTrack ? `${displayLoop} · ${preferredTrack.title}` : displayLoop}
       </h1>
       <p
         className="nuree-body fade-up fade-up-delay-2"
@@ -262,6 +267,55 @@ export function FocusMode() {
           gap: "1.5rem",
         }}
       >
+        {matchedTracks.length > 0 && (
+          <div style={{ width: "240px", marginBottom: "0.2rem" }}>
+            <label
+              style={{
+                display: "block",
+                fontSize: "0.72rem",
+                color: "#6b7280",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                fontWeight: 600,
+                marginBottom: "0.35rem",
+                textAlign: "center"
+              }}
+            >
+              Select Soundscape
+            </label>
+            <select
+              value={preferredTrack ? preferredTrack.id : "default"}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === "default") {
+                  setPreferredTrack(null);
+                } else {
+                  const track = matchedTracks.find((t) => t.id === val);
+                  if (track) setPreferredTrack(track);
+                }
+              }}
+              style={{
+                width: "100%",
+                padding: "0.6rem 0.8rem",
+                borderRadius: "8px",
+                border: "1px solid rgba(0, 0, 0, 0.08)",
+                background: "#ffffff",
+                fontSize: "0.85rem",
+                color: "#374151",
+                outline: "none",
+                cursor: "pointer",
+                textAlign: "center"
+              }}
+            >
+              <option value="default">Default {displayLoop} Loop</option>
+              {matchedTracks.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.title} {t.liked ? "♥" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <button
           onClick={togglePlay}
           style={{

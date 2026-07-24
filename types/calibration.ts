@@ -8,6 +8,7 @@ export type CalibrationFlag =
   | "Groove"
   | "No-Pulse"
   | "Deep Reset Mode"
+  | "Deep Reset Bridge"
   | null;
 export type LoopState = "Deep Focus" | "Ground" | "Reset" | "Start" | "Flow";
 export type CalibrationStatus = "in_progress" | "completed" | "abandoned";

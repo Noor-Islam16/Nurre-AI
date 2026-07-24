@@ -57,6 +57,11 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
   const meta = LOOP_META[loop];
   const flagMeta = outputs.flag ? FLAG_META[outputs.flag] : null;
   const loopColor = "#059669";
+  const isDeepReset = outputs.flag === "Deep Reset Mode" || outputs.flag === "Deep Reset Bridge";
+  const displayTitle = isDeepReset ? "Deep Reset Mode" : outputs.brain_mode;
+  const displayDescription = isDeepReset 
+    ? "Start with a short reset to discharge, then transition into Deep Focus when you feel ready."
+    : meta.description;
 
   function togglePreview() {
     if (isPreviewing) {
@@ -72,7 +77,7 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
       pauseLibrary();
     }
 
-    const trackUrl = outputs?.flag === "Deep Reset Mode"
+    const trackUrl = outputs?.flag === "Deep Reset Mode" || outputs?.flag === "Deep Reset Bridge"
       ? `${SUPABASE_URL}/storage/v1/object/public/focus-loops/${encodeURIComponent("Soundscape - Deep Reset Mode.mp3")}`
       : LOOP_PREVIEW_TRACK[loop];
 
@@ -129,18 +134,18 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
             marginBottom: "0.5rem",
           }}
         >
-          {outputs.brain_mode}
+          {displayTitle}
         </h1>
         <p
           className="nuree-body"
           style={{ maxWidth: "360px", margin: "0 auto" }}
         >
-          {meta.description}
+          {displayDescription}
         </p>
       </div>
 
       {/* Flag card — only shown when flag present */}
-      {flagMeta && (
+      {flagMeta && !isDeepReset && (
         <div
           className="nuree-card fade-up fade-up-delay-1"
           style={{
@@ -206,7 +211,9 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
               fontFamily: "Playfair Display, serif",
             }}
           >
-            {loop}
+            {outputs.flag === "Deep Reset Mode" || outputs.flag === "Deep Reset Bridge"
+              ? "Deep Reset Mode"
+              : loop}
           </p>
           <p
             style={{

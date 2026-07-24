@@ -598,7 +598,7 @@ When a user mentions a task by name, find it in the Active Tasks list above and 
         for (const item of response.output) {
           if (item.type === 'message' && item.role === 'assistant') {
             for (const content of item.content || []) {
-              if (content.type === 'output_text' && content.text) {
+              if ((content.type === 'output_text' || content.type === 'text') && content.text) {
                 messageContent += content.text
               }
             }

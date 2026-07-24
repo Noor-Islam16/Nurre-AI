@@ -10,6 +10,7 @@ import { LevelUpCelebration } from '@/components/rewards/level-up-celebration'
 import { ServiceWorkerProvider } from '@/app/providers/service-worker-provider'
 import { MusicPlayerProvider } from '@/components/music/Player'
 import { ConsentBanner } from '@/components/privacy/consent-banner'
+import { SplashLoaderProvider } from '@/components/providers/SplashLoaderProvider'
 
 export const metadata: Metadata = {
   title: 'NureeAI - Your AI-Powered ADHD Coach',
@@ -36,22 +37,25 @@ export default async function RootLayout({
       <body className="min-h-screen">
         <ServiceWorkerProvider>
           <AuthProvider>
-            <TrackingProvider>
-                <DailyMoodProvider>
-                  <GrowthPointsProvider>
-                      <MusicPlayerProvider>
-                        <AppLayout>
-                          {children}
-                        </AppLayout>
-                        <ConsentBanner />
-                        <LevelUpCelebration />
-                      </MusicPlayerProvider>
-                  </GrowthPointsProvider>
-                </DailyMoodProvider>
-            </TrackingProvider>
+            <SplashLoaderProvider>
+              <TrackingProvider>
+                  <DailyMoodProvider>
+                    <GrowthPointsProvider>
+                        <MusicPlayerProvider>
+                          <AppLayout>
+                            {children}
+                          </AppLayout>
+                          <ConsentBanner />
+                          <LevelUpCelebration />
+                        </MusicPlayerProvider>
+                    </GrowthPointsProvider>
+                  </DailyMoodProvider>
+              </TrackingProvider>
+            </SplashLoaderProvider>
           </AuthProvider>
         </ServiceWorkerProvider>
       </body>
     </html>
   )
 }
+

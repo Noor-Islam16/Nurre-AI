@@ -11,13 +11,35 @@ import {
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { usePreferenceStore } from '@/store/preference-store'
+import { useCalibrationStore } from '@/store/calibrationStore'
+import { useMusicPlayer, type MusicTrack } from '@/components/music/Player'
+import { apiGetProfile } from '@/lib/calibrationApi'
 
-type FocusSound = 'none' | 'brown' | 'rain'
+type FocusSound = 'none' | 'brown' | 'rain' | 'calibrated'
 
 const SOUND_LABELS: Record<FocusSound, string> = {
   none: 'None',
   brown: 'Brown Noise',
-  rain: 'Rain'
+  rain: 'Rain',
+  calibrated: 'Calibrated Soundscape'
+}
+
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+
+const SOUNDSCAPE_FILES = {
+  Reset: "Soundscape - Reset Mode_voicechange.mp3",
+  Start: "Soundscape - Start Mode.mp3",
+  "Deep Focus": "Soundscape - Deep Focus Mode - 3 min Loop.mp3",
+  Flow: "Soundscape - Flow Mode Mode - 3 min Loop.mp3",
+  Ground: "Soundscape - Ground Mode - 3 min Loop.mp3",
+};
+
+function resolveLoopUrl(loop: string, flag: string | null): string {
+  if (flag === "Deep Reset Mode") {
+    return `${SUPABASE_URL}/storage/v1/object/public/focus-loops/${encodeURIComponent("Soundscape - Deep Reset Mode.mp3")}`;
+  }
+  const filename = SOUNDSCAPE_FILES[loop as keyof typeof SOUNDSCAPE_FILES];
+  return `${SUPABASE_URL}/storage/v1/object/public/focus-loops/${encodeURIComponent(filename || "Soundscape - Start Mode.mp3")}`;
 }
 
 interface SoundsPopoverProps {
@@ -30,32 +52,107 @@ export function SoundsPopover({ disabled = false, onSoundChange }: SoundsPopover
   const setLastFocusSound = usePreferenceStore(state => state.setLastFocusSound)
   const [sound, setSound] = useState<FocusSound>('none')
 
-  // Load initial sound from localStorage or preferences (once on mount)
+  const setResult = useCalibrationStore(state => state.setResult)
+  const outputs = useCalibrationStore(state => state.outputs)
+  const { play: playMusic, pause: pauseMusic, currentTrack } = useMusicPlayer()
+
+  // Load user profile on mount to sync calibration outcomes
+  useEffect(() => {
+    async function loadProfile() {
+      try {
+        const data = await apiGetProfile()
+        if (data.has_profile && data.profile) {
+          setResult({
+            brain_mode: data.profile.brain_mode,
+            flag: data.profile.flag ?? null,
+            assigned_loop: data.profile.assigned_loop,
+            path: data.profile.path,
+            path_length: data.profile.path.length,
+            model_version: data.profile.model_version,
+            key_version: data.profile.key_version,
+          })
+        }
+      } catch (err) {
+        console.error('Failed to load profile in sounds popover:', err)
+      }
+    }
+    if (!outputs) {
+      loadProfile()
+    }
+  }, [outputs, setResult])
+
+  // Load initial sound from localStorage or preferences
   useEffect(() => {
     const stored = window.localStorage.getItem('nuree:lastFocusSound') as FocusSound | null
-    if (stored && ['none', 'brown', 'rain'].includes(stored)) {
+    if (stored && ['none', 'brown', 'rain', 'calibrated'].includes(stored)) {
       setSound(stored)
     } else if (preferences.lastFocusSound) {
-      setSound(preferences.lastFocusSound)
+      setSound(preferences.lastFocusSound as FocusSound)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []) // Only run once on mount
+  }, [])
 
   // Save sound changes and dispatch events
   useEffect(() => {
     window.localStorage.setItem('nuree:lastFocusSound', sound)
     onSoundChange?.(sound)
 
-    // Update preference store (only when local sound changes)
-    setLastFocusSound(sound)
+    setLastFocusSound(sound === 'calibrated' ? 'none' : sound)
 
-    const event = new CustomEvent('background-noise-control', {
-      detail: { type: sound === 'none' ? null : sound }
-    })
-    window.dispatchEvent(event)
-  }, [sound, onSoundChange, setLastFocusSound])
+    if (sound === 'calibrated') {
+      // 1. Stop background noise
+      const event = new CustomEvent('background-noise-control', {
+        detail: { type: null }
+      })
+      window.dispatchEvent(event)
 
-  const currentLabel = useMemo(() => SOUND_LABELS[sound], [sound])
+      // 2. Play calibrated soundscape
+      if (outputs) {
+        const loop = outputs.assigned_loop
+        const flag = outputs.flag
+        const trackToPlay: MusicTrack = {
+          id: `calibrated-${loop}`,
+          title: (flag === 'Deep Reset Mode' || flag === 'Deep Reset Bridge') ? 'Deep Reset Mode' : `${loop} Mode`,
+          url: resolveLoopUrl(loop, flag),
+          category: 'focus',
+          producer_name: 'Nuree AI',
+          brain_modes: [loop]
+        }
+        playMusic(trackToPlay).catch(err => {
+          console.error('Failed to play calibrated soundscape:', err)
+        })
+      }
+    } else {
+      // If we switched away from calibrated, pause the music
+      if (currentTrack?.id.startsWith('calibrated-')) {
+        pauseMusic()
+      }
+
+      // Dispatch background noise control
+      const event = new CustomEvent('background-noise-control', {
+        detail: { type: sound === 'none' ? null : (sound as 'brown' | 'rain') }
+      })
+      window.dispatchEvent(event)
+    }
+  }, [sound, onSoundChange, setLastFocusSound, outputs, playMusic, pauseMusic, currentTrack])
+
+  const currentLabel = useMemo(() => {
+    if (sound === 'calibrated' && outputs) {
+      if (outputs.flag === 'Deep Reset Mode' || outputs.flag === 'Deep Reset Bridge') {
+        return 'Deep Reset Mode'
+      }
+      return `${outputs.assigned_loop} Mode`
+    }
+    return SOUND_LABELS[sound]
+  }, [sound, outputs])
+
+  const options = useMemo(() => {
+    const base: FocusSound[] = ['none', 'brown', 'rain']
+    if (outputs) {
+      return ['calibrated', ...base] as FocusSound[]
+    }
+    return base as FocusSound[]
+  }, [outputs])
 
   const handleSelect = (newSound: FocusSound) => {
     if (disabled) return
@@ -77,8 +174,8 @@ export function SoundsPopover({ disabled = false, onSoundChange }: SoundsPopover
             <span>{currentLabel}</span>
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-40 p-1">
-          {(['none', 'brown', 'rain'] as FocusSound[]).map(option => (
+        <DropdownMenuContent align="start" className="w-48 p-1">
+          {options.map(option => (
             <DropdownMenuItem
               key={option}
               onSelect={() => handleSelect(option)}
@@ -89,7 +186,13 @@ export function SoundsPopover({ disabled = false, onSoundChange }: SoundsPopover
                   : 'text-gray-700 hover:bg-emerald-50 hover:text-emerald-700'
               )}
             >
-              <span>{SOUND_LABELS[option]}</span>
+              <span>
+                {option === 'calibrated' && outputs
+                  ? (outputs.flag === 'Deep Reset Mode' || outputs.flag === 'Deep Reset Bridge'
+                      ? 'Deep Reset Mode'
+                      : `${outputs.assigned_loop} Mode`)
+                  : SOUND_LABELS[option]}
+              </span>
               {sound === option && <span className="text-xs font-medium">Selected</span>}
             </DropdownMenuItem>
           ))}

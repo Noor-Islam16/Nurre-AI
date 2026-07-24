@@ -220,7 +220,7 @@ export class ResponsesAPIClient {
       if (item.type === 'message' && item.role === 'assistant') {
         // Extract text content from assistant messages
         for (const content of item.content || []) {
-          if (content.type === 'output_text') {
+          if (content.type === 'output_text' || content.type === 'text') {
             textContent = content.text || '';
           }
         }

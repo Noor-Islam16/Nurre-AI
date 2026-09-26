@@ -71,12 +71,44 @@ export async function GET(_req: NextRequest) {
     const ttlHours = Number(process.env.MUSIC_SIGN_TTL_HOURS || 12)
     const ttlSeconds = Number.isFinite(ttlHours) && ttlHours > 0 ? Math.floor(ttlHours * 3600) : 12 * 3600
 
+    const rowsArr = (data || []) as any[]
+
+    // Resolve each row's music record once, and batch-sign every relative
+    // storage path in a single request instead of one call per track —
+    // the old sequential loop was the main source of slowness here.
+    const resolved = rowsArr
+      .map((row) => {
+        const musicArray = row.music as any[] | null
+        const track = musicArray && musicArray.length > 0 ? musicArray[0] : null
+        return { row, track }
+      })
+      .filter((r): r is { row: any; track: NonNullable<typeof r.track> } => Boolean(r.track))
+
+    const pathsToSign = resolved
+      .filter(({ track }) => !/^https?:\/\//i.test(track.url))
+      .map(({ track }) => track.url)
+
+    const signedUrlMap = new Map<string, string>()
+    if (pathsToSign.length > 0) {
+      const { data: signedBatch, error: signBatchErr } = await admin.storage
+        .from('music')
+        .createSignedUrls(pathsToSign, ttlSeconds)
+
+      if (signBatchErr) {
+        console.warn('Batch signing error for recommendations:', signBatchErr.message)
+      } else {
+        for (const item of signedBatch || []) {
+          if (item.path && item.signedUrl && !item.error) {
+            signedUrlMap.set(item.path, item.signedUrl)
+          }
+        }
+      }
+    }
+
+    const signedUntil = new Date(Date.now() + ttlSeconds * 1000).toISOString()
+
     const items: RecommendationItem[] = []
-    for (const row of (data || []) as any[]) {
-      // Supabase join returns music as array with single item or null
-      const musicArray = row.music as any[] | null
-      if (!musicArray || musicArray.length === 0) continue
-      const track = musicArray[0]
+    for (const { row, track } of resolved) {
       const isLiked = likedSet.has(track.id)
       const isAbsolute = /^https?:\/\//i.test(track.url)
 
@@ -97,38 +129,29 @@ export async function GET(_req: NextRequest) {
         continue
       }
 
-      try {
-        const { data: signed, error: signErr } = await admin.storage
-          .from('music')
-          .createSignedUrl(track.url, ttlSeconds)
-
-        if (signErr || !signed?.signedUrl) {
-          console.warn('Skipping recommendation due to signing error or missing URL', {
-            track_id: row.track_id,
-            path: track.url,
-            error: signErr?.message,
-          })
-          continue
-        }
-
-        items.push({
-          track: {
-            id: track.id,
-            title: track.title,
-            url: signed.signedUrl,
-            category: track.category,
-            hz_label: track.hz_label ?? undefined,
-            duration_sec: track.duration_sec ?? undefined,
-            signedUntil: new Date(Date.now() + ttlSeconds * 1000).toISOString(),
-            liked: isLiked,
-          },
-          note: row.note,
-          createdAt: row.created_at,
+      const signedUrl = signedUrlMap.get(track.url)
+      if (!signedUrl) {
+        console.warn('Skipping recommendation due to signing error or missing URL', {
+          track_id: row.track_id,
+          path: track.url,
         })
-      } catch (e: any) {
-        console.warn('Signing exception; filtering out recommendation', { track_id: row.track_id, err: e?.message })
         continue
       }
+
+      items.push({
+        track: {
+          id: track.id,
+          title: track.title,
+          url: signedUrl,
+          category: track.category,
+          hz_label: track.hz_label ?? undefined,
+          duration_sec: track.duration_sec ?? undefined,
+          signedUntil,
+          liked: isLiked,
+        },
+        note: row.note,
+        createdAt: row.created_at,
+      })
     }
 
     return new NextResponse(JSON.stringify(items), {
@@ -143,4 +166,3 @@ export async function GET(_req: NextRequest) {
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }
-

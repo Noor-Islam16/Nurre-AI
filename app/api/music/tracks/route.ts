@@ -86,8 +86,37 @@ export async function GET(req: NextRequest) {
     // Prepare signer once; only used when needed
     const admin = createServiceClient()
 
+    const rowsArr = (rows || []) as TrackRow[]
+
+    // Sign every relative storage path in a single batched request instead
+    // of one network round-trip per track — signing them one-by-one in a
+    // loop was the main reason category loads got slow as track lists grew
+    // (N tracks meant N sequential Storage calls).
+    const pathsToSign = rowsArr
+      .filter((row) => !/^https?:\/\//i.test(row.url))
+      .map((row) => row.url)
+
+    const signedUrlMap = new Map<string, string>()
+    if (pathsToSign.length > 0) {
+      const { data: signedBatch, error: signBatchErr } = await admin.storage
+        .from('music')
+        .createSignedUrls(pathsToSign, ttlSeconds)
+
+      if (signBatchErr) {
+        console.warn('Batch signing error for tracks:', signBatchErr.message)
+      } else {
+        for (const item of signedBatch || []) {
+          if (item.path && item.signedUrl && !item.error) {
+            signedUrlMap.set(item.path, item.signedUrl)
+          }
+        }
+      }
+    }
+
+    const signedUntil = new Date(Date.now() + ttlSeconds * 1000).toISOString()
+
     const results: TrackResponse[] = []
-    for (const row of (rows || []) as TrackRow[]) {
+    for (const row of rowsArr) {
       const isLiked = likedSet.has(row.id)
       const isAbsolute = /^https?:\/\//i.test(row.url)
       if (isAbsolute) {
@@ -107,40 +136,30 @@ export async function GET(req: NextRequest) {
         continue
       }
 
-      // Treat as relative path within 'music' bucket; sign if possible
-      try {
-        const { data: signed, error: signErr } = await admin.storage
-          .from('music')
-          .createSignedUrl(row.url, ttlSeconds)
-
-        if (signErr || !signed?.signedUrl) {
-          console.warn('Skipping track due to signing error or missing URL', {
-            id: row.id,
-            path: row.url,
-            error: signErr?.message
-          })
-          // Filter out this track rather than returning a broken URL
-          continue
-        }
-
-        results.push({
+      const signedUrl = signedUrlMap.get(row.url)
+      if (!signedUrl) {
+        console.warn('Skipping track due to signing error or missing URL', {
           id: row.id,
-          title: row.title,
-          url: signed.signedUrl,
-          category: row.category,
-          hz_label: row.hz_label ?? undefined,
-          duration_sec: row.duration_sec ?? undefined,
-          has_voice: row.has_voice ?? undefined,
-          producer_name: row.producer_name ?? undefined,
-          producer_url: row.producer_url ?? undefined,
-          signedUntil: new Date(Date.now() + ttlSeconds * 1000).toISOString(),
-          liked: isLiked,
-          brain_modes: row.brain_modes ?? [],
+          path: row.url,
         })
-      } catch (e: any) {
-        console.warn('Signing exception; filtering out track', { id: row.id, err: e?.message })
+        // Filter out this track rather than returning a broken URL
         continue
       }
+
+      results.push({
+        id: row.id,
+        title: row.title,
+        url: signedUrl,
+        category: row.category,
+        hz_label: row.hz_label ?? undefined,
+        duration_sec: row.duration_sec ?? undefined,
+        has_voice: row.has_voice ?? undefined,
+        producer_name: row.producer_name ?? undefined,
+        producer_url: row.producer_url ?? undefined,
+        signedUntil,
+        liked: isLiked,
+        brain_modes: row.brain_modes ?? [],
+      })
     }
 
     return new NextResponse(JSON.stringify(results), {
@@ -155,4 +174,3 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }
-

@@ -11,11 +11,19 @@ const nextConfig: NextConfig = {
   images: {
     formats: ['image/avif', 'image/webp'],
   },
-  
+
+  // Ensure Turbopack resolves the correct project root
+  // (fixes "multiple lockfiles" warning affecting dev-server lock behavior)
+  turbopack: {
+    root: __dirname,
+  },
+
   // Configure webpack for optimal code splitting
-  webpack: (config, { isServer }) => {
-    if (!isServer) {
-      // Client-side bundle optimization
+  // NOTE: Turbopack ignores this block entirely (dev and build).
+  // Gated to only run for webpack builds (`next build` without --turbopack).
+  webpack: (config, { isServer, dev }) => {
+    if (!isServer && !dev) {
+      // Client-side production bundle optimization
       config.optimization = {
         ...config.optimization,
         splitChunks: {
@@ -67,23 +75,18 @@ const nextConfig: NextConfig = {
           maxAsyncRequests: 30,
           maxInitialRequests: 30,
         },
+        moduleIds: 'deterministic',
+        usedExports: true,
+        sideEffects: false,
       };
-      
-      // Optimize module IDs for better long-term caching
-      config.optimization.moduleIds = 'deterministic';
-      
-      // Enable tree shaking for all modules
-      config.optimization.usedExports = true;
-      config.optimization.sideEffects = false;
     }
-    
+
     return config;
   },
-  
-  
+
   // Configure compression
   compress: true,
-  
+
   // Enable production source maps for debugging (can be disabled for smaller builds)
   productionBrowserSourceMaps: false,
 };

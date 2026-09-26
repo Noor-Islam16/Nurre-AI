@@ -126,20 +126,21 @@ export class PatternCalculator {
       const fourteenDaysAgo = new Date()
       fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14)
       
-      // This week's stats
-      const { data: thisWeekTasks } = await supabase
-        .from('tasks')
-        .select('completed')
-        .eq('user_id', userId)
-        .gte('created_at', sevenDaysAgo.toISOString())
-      
-      // Last week's stats for trend
-      const { data: lastWeekTasks } = await supabase
-        .from('tasks')
-        .select('completed')
-        .eq('user_id', userId)
-        .gte('created_at', fourteenDaysAgo.toISOString())
-        .lt('created_at', sevenDaysAgo.toISOString())
+      // This week's and last week's stats don't depend on each other —
+      // fetch them concurrently instead of one after the other.
+      const [{ data: thisWeekTasks }, { data: lastWeekTasks }] = await Promise.all([
+        supabase
+          .from('tasks')
+          .select('completed')
+          .eq('user_id', userId)
+          .gte('created_at', sevenDaysAgo.toISOString()),
+        supabase
+          .from('tasks')
+          .select('completed')
+          .eq('user_id', userId)
+          .gte('created_at', fourteenDaysAgo.toISOString())
+          .lt('created_at', sevenDaysAgo.toISOString()),
+      ])
       
       if (!thisWeekTasks || thisWeekTasks.length === 0) {
         return null // No tasks this week

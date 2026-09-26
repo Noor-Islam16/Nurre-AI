@@ -94,6 +94,8 @@ class EventTracker {
   private isInitialized = false
   private pendingEvents: TrackingEvent[] = []
   private processQueueTimer: NodeJS.Timeout | null = null
+  private maxWaitTimer: NodeJS.Timeout | null = null
+  private readonly maxBatchWaitMs = 2000
   private failureCount = 0
   private resetIdleTimer: (() => void) | null = null
   private clickHandler: (() => void) | null = null
@@ -265,15 +267,35 @@ class EventTracker {
     
     if (this.queue.length === 0) return
     
-    // Debounce processing to batch events
+    // Debounce processing to batch events — resets on every new event so
+    // a quiet moment flushes quickly, but capped by a max-wait timer so a
+    // steady trickle of events can't starve the flush indefinitely and
+    // spam the network with lots of tiny POSTs instead of a few batched ones.
     if (this.processQueueTimer) {
       clearTimeout(this.processQueueTimer)
     }
+
+    if (!this.maxWaitTimer) {
+      this.maxWaitTimer = setTimeout(() => {
+        this.maxWaitTimer = null
+        this.flushQueue()
+      }, this.maxBatchWaitMs)
+    }
     
-    this.processQueueTimer = setTimeout(async () => {
+    this.processQueueTimer = setTimeout(() => {
+      if (this.maxWaitTimer) {
+        clearTimeout(this.maxWaitTimer)
+        this.maxWaitTimer = null
+      }
+      this.flushQueue()
+    }, 500) // Batch events within a 500ms quiet window
+  }
+
+  private async flushQueue() {
       const events = [...this.queue]
       this.queue = []
-      
+      if (events.length === 0) return
+
       try {
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 5000)
@@ -309,7 +331,6 @@ class EventTracker {
         // Implement exponential backoff for retries
         this.handleFailedEvents(events)
       }
-    }, 100) // Batch events within 100ms window
   }
   
   private handleFailedEvents(events: TrackingEvent[]) {
@@ -453,6 +474,10 @@ class EventTracker {
     if (this.processQueueTimer) {
       clearTimeout(this.processQueueTimer)
       this.processQueueTimer = null
+    }
+    if (this.maxWaitTimer) {
+      clearTimeout(this.maxWaitTimer)
+      this.maxWaitTimer = null
     }
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval)

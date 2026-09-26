@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { useUser } from './client'
-import { createClient } from './client'
 
 export function useIsAdmin() {
   const [isAdmin, setIsAdmin] = useState(false)
@@ -10,32 +9,20 @@ export function useIsAdmin() {
   const { user } = useUser()
 
   useEffect(() => {
+    if (!user) {
+      setIsAdmin(false)
+      setLoading(false)
+      return
+    }
+
+    let cancelled = false
+
     const checkAdminStatus = async () => {
-      if (!user) {
-        setIsAdmin(false)
-        setLoading(false)
-        return
-      }
-
       try {
-        const supabase = createClient()
-
-        // Get user's email from the users table
-        const { data: profile } = await supabase
-          .from('users')
-          .select('email')
-          .eq('id', user.id)
-          .single()
-
-        if (!profile?.email) {
-          setIsAdmin(false)
-          setLoading(false)
-          return
-        }
-
-        // Check if the email is in the admin list
-        // Note: We can't access process.env.ADMIN_EMAILS directly in client components
-        // So we'll check by attempting to access the admin API
+        // /api/admin/check-access already validates the session and looks up
+        // the user's email server-side, so there's no need to duplicate that
+        // lookup here first — that pre-check was a wasted round-trip that
+        // never even fed its result into the API call below.
         const response = await fetch('/api/admin/check-access', {
           method: 'GET',
           headers: {
@@ -43,16 +30,26 @@ export function useIsAdmin() {
           },
         })
 
-        setIsAdmin(response.ok)
+        if (!cancelled) {
+          setIsAdmin(response.ok)
+        }
       } catch (error) {
         console.error('Error checking admin status:', error)
-        setIsAdmin(false)
+        if (!cancelled) {
+          setIsAdmin(false)
+        }
       } finally {
-        setLoading(false)
+        if (!cancelled) {
+          setLoading(false)
+        }
       }
     }
 
     checkAdminStatus()
+
+    return () => {
+      cancelled = true
+    }
   }, [user])
 
   return { isAdmin, loading }

@@ -270,7 +270,23 @@ export const useRewardsStore = create<RewardsStore>((set, get) => ({
 
     try {
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
+      // Use the already-fetched user from the user store instead of hitting
+      // Supabase's auth endpoint again — auth.getUser() is a real network
+      // round-trip, not a cache read, and by the time widgets mount the
+      // user store has almost always already resolved it (see AuthProvider).
+      let user = useUserStore.getState().user
+      if (!user) {
+        try {
+          const { data } = await supabase.auth.getUser()
+          user = data.user
+        } catch {
+          // No session yet (e.g. store hasn't hydrated, or user is logged
+          // out) — Supabase throws AuthSessionMissingError here instead of
+          // returning null, but that's an expected state, not a real
+          // error, so don't let it bubble up and get logged as one.
+          user = null
+        }
+      }
 
       if (!user) {
         set({ isLoadingGP: false })
@@ -308,7 +324,18 @@ export const useRewardsStore = create<RewardsStore>((set, get) => ({
   earnGP: async (amount: number, reason: string) => {
     try {
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
+      // Same cached-user pattern as fetchGrowthPoints — avoids a second
+      // auth.getUser() round-trip when called right after another
+      // rewards action (e.g. from claimDailyBonus below).
+      let user = useUserStore.getState().user
+      if (!user) {
+        try {
+          const { data } = await supabase.auth.getUser()
+          user = data.user
+        } catch {
+          user = null
+        }
+      }
 
       if (!user) return { success: false }
 
@@ -366,21 +393,33 @@ export const useRewardsStore = create<RewardsStore>((set, get) => ({
       }
 
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
+      let user = useUserStore.getState().user
+      if (!user) {
+        try {
+          const { data } = await supabase.auth.getUser()
+          user = data.user
+        } catch {
+          user = null
+        }
+      }
 
       if (!user) return { success: false }
 
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({ last_daily_bonus: today })
-        .eq('id', user.id)
+      // The bonus-date update and the points award don't depend on each
+      // other's result, so run them concurrently instead of one after
+      // the other — this alone turns 2 sequential round-trips into 1.
+      const [{ error: updateError }, result] = await Promise.all([
+        supabase
+          .from('users')
+          .update({ last_daily_bonus: today })
+          .eq('id', user.id),
+        get().earnGP(GP_VALUES.daily_bonus, 'daily_bonus'),
+      ])
 
       if (updateError) {
         console.error('[Rewards] Error updating daily bonus date:', updateError)
         return { success: false }
       }
-
-      const result = await get().earnGP(GP_VALUES.daily_bonus, 'daily_bonus')
 
       if (result.success) {
         set({ lastDailyBonus: today })

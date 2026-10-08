@@ -16,7 +16,10 @@ interface Track {
   hz_label?: string
   producer_name?: string
   brain_modes?: string[]
+  is_active?: boolean
 }
+
+const CATEGORIES = ['focus', 'calm', 'productivity', 'sleep']
 
 const BRAIN_MODES = ['Reset', 'Start', 'Deep Focus', 'Flow', 'Ground']
 
@@ -31,7 +34,7 @@ export default function AdminTracksPage() {
   const fetchTracks = async () => {
     try {
       setLoading(true)
-      const res = await fetch('/api/music/tracks', { cache: 'no-store' })
+      const res = await fetch('/api/admin/music/tracks', { cache: 'no-store' })
       if (!res.ok) {
         throw new Error(`Failed to fetch tracks: ${res.statusText}`)
       }
@@ -67,8 +70,8 @@ export default function AdminTracksPage() {
     setSavingId(trackId)
 
     try {
-      const res = await fetch('/api/music/tracks/tag', {
-        method: 'POST',
+      const res = await fetch('/api/admin/music/tracks', {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ trackId, brainModes: newModes })
       })
@@ -95,6 +98,38 @@ export default function AdminTracksPage() {
     }
   }
 
+  // Update category / active flag with optimistic UI + rollback
+  const handleUpdateField = async (
+    trackId: string,
+    field: 'category' | 'is_active',
+    value: string | boolean
+  ) => {
+    const track = tracks.find(t => t.id === trackId)
+    if (!track) return
+    const previous = field === 'category' ? track.category : track.is_active
+    setTracks(prev => prev.map(t => t.id === trackId ? { ...t, [field]: value } : t))
+    setSavingId(trackId)
+    try {
+      const res = await fetch('/api/admin/music/tracks', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(
+          field === 'category' ? { trackId, category: value } : { trackId, isActive: value }
+        )
+      })
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.error || 'Failed to save')
+      }
+      toast({ title: 'Saved', description: `Updated "${track.title}"` })
+    } catch (err: any) {
+      setTracks(prev => prev.map(t => t.id === trackId ? { ...t, [field]: previous } : t))
+      toast({ title: 'Save failed', description: err.message || 'Failed to update track' })
+    } finally {
+      setSavingId(null)
+    }
+  }
+
   return (
     <div className="container mx-auto px-4 py-8 max-w-6xl space-y-6">
       {/* Back to Admin */}
@@ -111,7 +146,7 @@ export default function AdminTracksPage() {
       <Alert>
         <AlertTitle className="font-semibold text-emerald-800">Practical Tag Assignment</AlertTitle>
         <AlertDescription className="text-emerald-700">
-          Tag tracks below with their corresponding **Brain Modes**. This allows Nuree Focus Mode to dynamically match user library selections based on their calibrator outcomes, without altering their default Calm categories.
+          Assign each soundtrack to its Brain Modes (Ground, Reset, Start, Deep Focus, Flow). This allows Nuree Focus Mode to dynamically match user library selections based on their calibrator outcomes, without altering their default Calm categories.
         </AlertDescription>
       </Alert>
 
@@ -144,6 +179,7 @@ export default function AdminTracksPage() {
                     <th className="px-6 py-4">Track Info</th>
                     <th className="px-6 py-4">Category</th>
                     <th className="px-6 py-4 text-center">Brain Mode Tags</th>
+                    <th className="px-6 py-4 text-center">Active</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y text-gray-700 text-sm">
@@ -166,9 +202,15 @@ export default function AdminTracksPage() {
                           </div>
                         </td>
                         <td className="px-6 py-4 capitalize">
-                          <Badge variant="secondary" className="bg-slate-100 hover:bg-slate-100 text-slate-800">
-                            {track.category}
-                          </Badge>
+                          <select
+                            value={track.category}
+                            onChange={(e) => handleUpdateField(track.id, 'category', e.target.value)}
+                            className="rounded-md border border-gray-200 bg-white px-2 py-1 text-sm capitalize"
+                          >
+                            {CATEGORIES.map((c) => (
+                              <option key={c} value={c}>{c}</option>
+                            ))}
+                          </select>
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center justify-center gap-4 flex-wrap">
@@ -200,6 +242,14 @@ export default function AdminTracksPage() {
                               <Loader2 className="w-4 h-4 animate-spin text-emerald-600 ml-2" />
                             )}
                           </div>
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <input
+                            type="checkbox"
+                            checked={track.is_active !== false}
+                            onChange={(e) => handleUpdateField(track.id, 'is_active', e.target.checked)}
+                            aria-label={`Toggle ${track.title} active`}
+                          />
                         </td>
                       </tr>
                     )

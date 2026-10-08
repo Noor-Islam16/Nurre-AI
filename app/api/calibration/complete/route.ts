@@ -1,20 +1,41 @@
 // POST /api/calibration/complete
 // Runs the tree scoring engine and saves the user's sound profile.
 // Body: { session_id }
+//
+// The full result (path, path length, model/key versions) is stored in the
+// database for the product team, but ONLY the brain mode, flag and loop are
+// returned to the browser.
 
 import { NextResponse } from "next/server";
 import { getAuthUser, createAdminClient } from "@/lib/supabase/server";
 import { runCalibration } from "@/lib/scoringEngine";
+import { toPublicOutputs } from "@/lib/calibration/server-flow";
+import { rateLimit } from "@/lib/rateLimit";
 import type { CalibrationPairResponseRow } from "@/types/calibration";
 import type { PairBehaviourData } from "@/types/calibration";
+
+const MINUTE_MS = 60_000;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function POST(request: Request) {
   try {
     const user = await getAuthUser();
+
+    const bucket = rateLimit({
+      key: `calibration:complete:minute:${user.id}`,
+      limit: 20,
+      windowMs: MINUTE_MS,
+    });
+    if (!bucket.success) {
+      return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+    }
+
     const supabase = createAdminClient();
 
-    const { session_id } = await request.json();
-    if (!session_id) {
+    const body = await request.json().catch(() => null);
+    const session_id = body?.session_id;
+    if (typeof session_id !== "string" || !UUID_RE.test(session_id)) {
       return NextResponse.json(
         { error: "session_id is required" },
         { status: 400 },
@@ -56,7 +77,7 @@ export async function POST(request: Request) {
     const pairCount = pairRows?.length ?? 0;
     if (!pairRows || pairCount < 3 || pairCount > 4) {
       return NextResponse.json(
-        { error: `Invalid pair count: ${pairCount} (expected 3 or 4)` },
+        { error: "Calibration is not complete yet" },
         { status: 422 },
       );
     }
@@ -74,8 +95,16 @@ export async function POST(request: Request) {
       switch_count: row.switch_count,
     }));
 
-    // Run tree scoring
-    const outputs = runCalibration(pairs);
+    // Run tree scoring (throws if the stored path has not reached a result)
+    let outputs;
+    try {
+      outputs = runCalibration(pairs);
+    } catch {
+      return NextResponse.json(
+        { error: "Calibration is not complete yet" },
+        { status: 422 },
+      );
+    }
 
     // Update session to completed
     await supabase
@@ -107,11 +136,14 @@ export async function POST(request: Request) {
       { onConflict: "user_id" },
     );
 
-    return NextResponse.json({ session_id, outputs });
+    return NextResponse.json(
+      { session_id, outputs: toPublicOutputs(outputs) },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json(
-      { error: message },
+      { error: message === "Unauthorized" ? message : "Failed to complete" },
       { status: message === "Unauthorized" ? 401 : 500 },
     );
   }

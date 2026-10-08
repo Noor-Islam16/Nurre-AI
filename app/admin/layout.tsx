@@ -25,8 +25,10 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
     .eq('id', user.id)
     .single()
 
-  // Check if user is admin
-  if (ADMIN_EMAILS.length > 0 && !ADMIN_EMAILS.includes(userProfile?.email || '')) {
+  // Fail CLOSED: if no admins are configured, nobody gets in (previously an
+  // empty ADMIN_EMAILS let every logged-in user open the admin area).
+  const email = userProfile?.email || user.email || ''
+  if (ADMIN_EMAILS.length === 0 || !ADMIN_EMAILS.includes(email)) {
     // Not an admin, redirect to dashboard
     redirect('/dashboard')
   }

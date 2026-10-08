@@ -563,17 +563,30 @@ When a user mentions a task by name, find it in the Active Tasks list above and 
           context
         },
         async () => {
-          return await responsesClient.create({
-            model: CHAT_MODEL,
-            input,
-            instructions: systemPrompt,
-            tools,
-            tool_choice: toolChoice || 'auto',
-            previous_response_id: shouldUsePreviousResponseId,
-            reasoning: { effort: 'minimal' },
-            text: { verbosity: 'low' },
-            max_output_tokens: 1000
-          })
+          const createWith = (prevId: string | null | undefined) =>
+            responsesClient.create({
+              model: CHAT_MODEL,
+              input,
+              instructions: systemPrompt,
+              tools,
+              tool_choice: toolChoice || 'auto',
+              previous_response_id: prevId,
+              reasoning: { effort: 'minimal' },
+              text: { verbosity: 'low' },
+              max_output_tokens: 1000
+            })
+          try {
+            return await createWith(shouldUsePreviousResponseId)
+          } catch (err: any) {
+            // A stale/expired previous_response_id must not break the chat:
+            // retry once as a fresh turn.
+            const msg = String(err?.message || '')
+            if (shouldUsePreviousResponseId && /previous.?response|not found/i.test(msg)) {
+              console.warn('Stale previous_response_id, retrying without it')
+              return await createWith(null)
+            }
+            throw err
+          }
         }
       )
       

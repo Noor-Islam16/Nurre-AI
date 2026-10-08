@@ -1,5 +1,5 @@
 import { Suspense } from 'react'
-import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/admin'
 import { UserTable } from '@/components/admin/user-table'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -29,17 +29,20 @@ interface UserWithStats {
 }
 
 async function getUsers(searchQuery?: string): Promise<UserWithStats[]> {
-  const supabase = await createClient()
-  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  // Service-role client: this page is only reachable by admins (the admin
+  // layout is fail-closed). The user-scoped RLS client could only see rows
+  // the admin owns, which made user/account data look inconsistent.
+  const supabase = createServiceClient()
 
-  // Get users with basic info
   let query = supabase
     .from('users')
     .select('*')
     .order('created_at', { ascending: false })
 
   if (searchQuery) {
-    query = query.or(`email.ilike.%${searchQuery}%,name.ilike.%${searchQuery}%`)
+    // strip characters that have meaning inside a PostgREST .or() filter
+    const safe = searchQuery.replace(/[%,()*\\]/g, ' ').trim()
+    if (safe) query = query.or(`email.ilike.%${safe}%,name.ilike.%${safe}%`)
   }
 
   const { data: users, error } = await query
@@ -48,56 +51,57 @@ async function getUsers(searchQuery?: string): Promise<UserWithStats[]> {
     console.error('Failed to fetch users:', error)
     return []
   }
+  if (users.length === 0) return []
 
-  // Enhance with additional stats
-  const enhancedUsers = await Promise.all(
-    users.map(async (user) => {
-      // Get last activity
-      const { data: lastActivity } = await supabase
-        .from('events')
-        .select('created_at')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single()
+  const ids = users.map((u) => u.id)
 
-      // Get task stats
-      const { count: totalTasks } = await supabase
-        .from('tasks')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id)
+  // ONE query per table instead of 5 queries per user (N+1).
+  const [tasksRes, focusRes, eventsRes, restrictionsRes] = await Promise.all([
+    supabase.from('tasks').select('user_id, completed').in('user_id', ids),
+    supabase.from('focus_sessions').select('user_id').in('user_id', ids),
+    supabase
+      .from('events')
+      .select('user_id, created_at')
+      .in('user_id', ids)
+      .order('created_at', { ascending: false })
+      .limit(5000),
+    supabase.from('user_restrictions').select('user_id, restriction_level').in('user_id', ids),
+  ])
 
-      const { count: completedTasks } = await supabase
-        .from('tasks')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id)
-        .eq('completed', true)
+  const totalTasks = new Map<string, number>()
+  const completedTasks = new Map<string, number>()
+  for (const t of tasksRes.data ?? []) {
+    totalTasks.set(t.user_id, (totalTasks.get(t.user_id) ?? 0) + 1)
+    if (t.completed) completedTasks.set(t.user_id, (completedTasks.get(t.user_id) ?? 0) + 1)
+  }
 
-      // Get focus session count
-      const { count: totalFocusSessions } = await supabase
-        .from('focus_sessions')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id)
+  const focusCounts = new Map<string, number>()
+  for (const f of focusRes.data ?? []) {
+    focusCounts.set(f.user_id, (focusCounts.get(f.user_id) ?? 0) + 1)
+  }
 
-      // Check for restrictions
-      const { data: restriction } = await supabase
-        .from('user_restrictions')
-        .select('restriction_level')
-        .eq('user_id', user.id)
-        .single()
+  // events are ordered newest-first, so the first one seen is the latest
+  const lastActive = new Map<string, string>()
+  for (const e of eventsRes.data ?? []) {
+    if (!lastActive.has(e.user_id)) lastActive.set(e.user_id, e.created_at)
+  }
 
-      return {
-        ...user,
-        last_active: lastActivity?.created_at,
-        total_tasks: totalTasks || 0,
-        completed_tasks: completedTasks || 0,
-        total_focus_sessions: totalFocusSessions || 0,
-        has_restriction: restriction?.restriction_level !== 'none' && restriction?.restriction_level !== null,
-      }
-    })
-  )
+  const restricted = new Map<string, boolean>()
+  for (const r of restrictionsRes.data ?? []) {
+    restricted.set(
+      r.user_id,
+      r.restriction_level !== 'none' && r.restriction_level !== null,
+    )
+  }
 
-  return enhancedUsers
+  return users.map((user) => ({
+    ...user,
+    last_active: lastActive.get(user.id),
+    total_tasks: totalTasks.get(user.id) ?? 0,
+    completed_tasks: completedTasks.get(user.id) ?? 0,
+    total_focus_sessions: focusCounts.get(user.id) ?? 0,
+    has_restriction: restricted.get(user.id) ?? false,
+  }))
 }
 
 export default async function UsersPage({

@@ -2,14 +2,11 @@
 
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { AIInput } from "@/components/ai/shared/ai-input";
 import { useAIAssistant } from "@/hooks/useAIAssistant";
 import { useVoiceChat } from "@/hooks/use-voice-chat";
 import { useVoiceStore } from "@/store/voice-store";
 import { useUserStore } from "@/store/user-store";
-import { useCalibrationStore } from "@/store/calibrationStore";
-import { useRegulation } from "@/hooks/use-regulation";
 import { useAudioLevel } from "@/lib/hooks/use-audio-level";
 import { getPersonality, type PersonalityId } from "@/lib/config/personalities";
 import dynamic from "next/dynamic";
@@ -36,17 +33,20 @@ const NureeAvatar = dynamic(
     ),
   },
 );
-import { useRouter } from "next/navigation";
 import {
   Sparkles,
   Mic,
   MessageSquare,
-  Clock,
   ExternalLink,
   Maximize2,
 } from "lucide-react";
 import { ImmersiveCoachMode } from "@/components/features/immersive-coach-mode";
 import { cn } from "@/lib/utils";
+import { isAffirmative, useNureeActions } from "@/hooks/use-nuree-actions";
+import {
+  NureeChatOpener,
+  NureeHomeActions,
+} from "./nuree-quick-actions";
 
 interface NureeAISectionProps {
   sessionId?: string;
@@ -54,18 +54,12 @@ interface NureeAISectionProps {
   fullHeight?: boolean;
 }
 
-const focusDurations = [
-  { label: "15", minutes: 15 },
-  { label: "25", minutes: 25 },
-  { label: "45", minutes: 45 },
-];
-
 export function NureeAISection({
   sessionId,
   className,
   fullHeight,
 }: NureeAISectionProps) {
-  const router = useRouter();
+  const { startCheckIn } = useNureeActions();
   const conversationId = sessionId || undefined;
 
   // Check global store for active floating session
@@ -93,20 +87,11 @@ export function NureeAISection({
     return saved === "text" ? "text" : "voice";
   });
 
-  // Get current functional state
-  const outputs = useCalibrationStore((state) => state.outputs);
-  const functionalState = outputs?.assigned_loop || null;
-  const regulation = useRegulation(functionalState);
-
   // Immersive mode state
   const [isImmersive, setIsImmersive] = useState(false);
 
-  // Get focus duration from localStorage, default to 25
-  const [selectedFocusDuration, setSelectedFocusDuration] = useState(() => {
-    if (typeof window === "undefined") return 25;
-    const saved = localStorage.getItem("nuree-focus-duration");
-    return saved ? parseInt(saved) : 25;
-  });
+  // Text chat: whether the proactive check-in question is still showing
+  const [checkInDismissed, setCheckInDismissed] = useState(false);
 
   const transcriptContainerRef = useRef<HTMLDivElement>(null);
   const remoteAudioElementRef = useRef<HTMLAudioElement>(null);
@@ -175,16 +160,6 @@ export function NureeAISection({
       localStorage.setItem("nuree-dashboard-mode", mode);
     }
   }, [mode]);
-
-  // Persist focus duration to localStorage
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem(
-        "nuree-focus-duration",
-        selectedFocusDuration.toString(),
-      );
-    }
-  }, [selectedFocusDuration]);
 
   // Auto-switch to text mode if mic permission is denied
   useEffect(() => {
@@ -262,8 +237,14 @@ export function NureeAISection({
     setMode(newMode);
   };
 
-  const handleStartFocus = () => {
-    router.push(`/focus?duration=${selectedFocusDuration}`);
+  // Text chat: if the proactive check-in question is showing and the user
+  // simply types "yes"/"sure", go straight to the calibrator.
+  const handleTextSend = async (text: string): Promise<void> => {
+    if (messages.length === 0 && !checkInDismissed && isAffirmative(text)) {
+      startCheckIn();
+      return;
+    }
+    await sendMessage(text);
   };
 
   const getMicButtonLabel = () => {
@@ -313,7 +294,6 @@ export function NureeAISection({
   // hasConversationStarted: true only when there's actual finalized content in transcript
   // (not just pending input) - used to determine when to hide the welcome message
   const hasConversationStarted = transcript.length > 0;
-  const isDesktop = typeof window !== "undefined" && window.innerWidth >= 768;
 
   // Auto-scroll transcript to bottom when new messages arrive
   useEffect(() => {
@@ -467,19 +447,6 @@ export function NureeAISection({
                         <h2 className="text-2xl md:text-3xl lg:text-4xl xl:text-5xl 2xl:text-6xl font-bold text-gray-900 mb-1 xl:mb-2">
                           Hi, I&apos;m {personality.name}
                         </h2>
-                        <p className="text-base lg:text-lg xl:text-xl 2xl:text-2xl text-gray-500 max-w-md mx-auto">
-                          {regulation.primaryPrompt || "How are you feeling?"}
-                        </p>
-                        
-                        {regulation.interventions.length > 0 && regulation.interventions[0] !== 'none' && (
-                          <div className="mt-4 flex flex-wrap justify-center gap-2">
-                            {regulation.interventions.map(intervention => (
-                              <span key={intervention} className="px-3 py-1 bg-violet-100 text-violet-700 rounded-full text-xs xl:text-sm font-medium">
-                                {intervention.replace(/_/g, ' ')}
-                              </span>
-                            ))}
-                          </div>
-                        )}
                       </motion.div>
                     )}
 
@@ -541,11 +508,6 @@ export function NureeAISection({
                       <p className="text-base xl:text-lg 2xl:text-xl font-medium text-gray-900">
                         {getMicButtonLabel()}
                       </p>
-                      {isIdle && (
-                        <p className="text-sm xl:text-base 2xl:text-lg text-gray-400 mt-0.5 xl:mt-1">
-                          {isDesktop ? "Tap Space to talk" : "Tap to talk"}
-                        </p>
-                      )}
                     </div>
 
                     {/* Current Subtitle - Shows latest message prominently */}
@@ -566,67 +528,9 @@ export function NureeAISection({
                   </div>
                 </div>
 
-                {/* Bottom - Quick Focus CTA (in normal flow) */}
+                {/* Bottom - the two primary actions */}
                 <div className="flex-shrink-0 px-6 lg:px-8 xl:px-10 2xl:px-12 pb-4 xl:pb-5 2xl:pb-6 pt-3 xl:pt-4">
-                  <div className="flex items-center justify-between gap-4 xl:gap-6">
-                    {/* LEFT — icon + labels */}
-                    <div className="flex items-center gap-3 lg:gap-4 xl:gap-5">
-                      <div className="p-2.5 lg:p-3 xl:p-4 2xl:p-5 bg-emerald-50 rounded-xl xl:rounded-2xl">
-                        <Clock className="w-5 h-5 lg:w-6 lg:h-6 xl:w-7 xl:h-7 2xl:w-8 2xl:h-8 text-emerald-600" />
-                      </div>
-                      <div>
-                        <p className="text-sm lg:text-base xl:text-lg 2xl:text-xl font-semibold text-gray-900">
-                          Quick Focus Session
-                        </p>
-                        <p className="text-xs lg:text-sm xl:text-base 2xl:text-lg text-gray-500">
-                          Start a timed focus session
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* RIGHT — Calibration + segmented picker + Start Focus */}
-                    {/* RIGHT — segmented picker + buttons */}
-                    <div className="flex items-center gap-2 lg:gap-3 xl:gap-4">
-                      {/* Segmented Time Picker */}
-                      <div className="flex gap-0.5 p-1 lg:p-1.5 xl:p-2 bg-gray-100 rounded-lg xl:rounded-xl">
-                        {focusDurations.map((duration) => (
-                          <button
-                            key={duration.minutes}
-                            onClick={() =>
-                              setSelectedFocusDuration(duration.minutes)
-                            }
-                            className={cn(
-                              "px-3 py-1.5 lg:px-4 lg:py-2 xl:px-5 xl:py-2.5 2xl:px-6 2xl:py-3 rounded-md xl:rounded-lg text-sm lg:text-base xl:text-lg 2xl:text-xl font-medium transition-all",
-                              selectedFocusDuration === duration.minutes
-                                ? "bg-emerald-600 text-white shadow-sm"
-                                : "text-gray-600 hover:bg-gray-200",
-                            )}
-                          >
-                            {duration.label}
-                          </button>
-                        ))}
-                      </div>
-
-                      {/* Stacked buttons */}
-                      <div className="flex flex-col gap-1.5 xl:gap-2">
-                        <Button
-                          onClick={() => router.push("/calibrate")}
-                          size="sm"
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg xl:rounded-xl shadow-sm lg:text-base xl:text-lg 2xl:text-xl lg:px-4 lg:py-2 xl:px-6 xl:py-3 2xl:px-8 2xl:py-4 lg:h-auto"
-                        >
-                          Start Calibration
-                        </Button>
-
-                        <Button
-                          onClick={handleStartFocus}
-                          size="sm"
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg xl:rounded-xl shadow-sm lg:text-base xl:text-lg 2xl:text-xl lg:px-4 lg:py-2 xl:px-6 xl:py-3 2xl:px-8 2xl:py-4 lg:h-auto"
-                        >
-                          Start {selectedFocusDuration}‑min Focus
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
+                  <NureeHomeActions />
                 </div>
               </motion.div>
             ) : (
@@ -649,9 +553,6 @@ export function NureeAISection({
                         <h2 className="text-lg lg:text-xl xl:text-2xl 2xl:text-3xl font-semibold text-gray-900">
                           Chat with {personality.name}
                         </h2>
-                        <p className="text-sm lg:text-base xl:text-lg 2xl:text-xl text-gray-500">
-                          Your personal assistant
-                        </p>
                       </div>
                     </div>
 
@@ -673,18 +574,16 @@ export function NureeAISection({
                 <div className="flex-1 overflow-y-auto px-6 lg:px-8 xl:px-10 2xl:px-12 py-4 lg:py-6 xl:py-8 bg-gradient-to-b from-gray-50/30 to-transparent">
                   {messages.length === 0 ? (
                     <div className="h-full flex items-center justify-center">
-                      <div className="text-center">
-                        <div className="w-20 h-20 lg:w-28 lg:h-28 xl:w-36 xl:h-36 2xl:w-44 2xl:h-44 mx-auto mb-4 lg:mb-6 xl:mb-8 bg-gradient-to-br from-violet-100 to-violet-50 rounded-2xl xl:rounded-3xl flex items-center justify-center shadow-sm">
-                          <Sparkles className="w-9 h-9 lg:w-12 lg:h-12 xl:w-16 xl:h-16 2xl:w-20 2xl:h-20 text-violet-500" />
-                        </div>
-                        <h3 className="text-lg lg:text-2xl xl:text-3xl 2xl:text-4xl font-medium text-gray-900 mb-1 lg:mb-2 xl:mb-3">
-                          Hi! I&apos;m {personality.name}
-                        </h3>
-                        <p className="text-gray-500 max-w-xs lg:max-w-md xl:max-w-lg 2xl:max-w-xl mx-auto text-sm lg:text-base xl:text-lg 2xl:text-xl leading-relaxed">
-                          I&apos;m here to help you stay focused and productive.
-                          Ask me anything or use the quick actions above!
+                      {checkInDismissed ? (
+                        <p className="text-gray-500 text-sm lg:text-base text-center">
+                          What would you like to work on?
                         </p>
-                      </div>
+                      ) : (
+                        <NureeChatOpener
+                          assistantName={personality.name}
+                          onDecline={() => setCheckInDismissed(true)}
+                        />
+                      )}
                     </div>
                   ) : (
                     <div className="space-y-1 xl:space-y-2">
@@ -709,7 +608,7 @@ export function NureeAISection({
                 {/* Input Area - Modern Design */}
                 <div className="border-t border-gray-100/30 px-6 lg:px-8 xl:px-10 2xl:px-12 py-4 lg:py-5 xl:py-6 2xl:py-8">
                   <AIInput
-                    onSend={sendMessage}
+                    onSend={handleTextSend}
                     isLoading={isLoading}
                     placeholder={`Message ${personality.name}...`}
                   />

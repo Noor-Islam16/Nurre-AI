@@ -132,7 +132,21 @@ export function useAIAssistant(options: UseAIAssistantOptions) {
         sessionId: conversationId || undefined
       })
     },
-    onError
+    onError: (error) => {
+      // Surface a failed send as a visible assistant message instead of
+      // leaving the user with a silent, empty reply.
+      const msg = /Authentication/i.test(error.message)
+        ? 'Your session expired. Please sign in again.'
+        : /Rate limit/i.test(error.message)
+          ? 'You are sending messages quickly. Please wait a moment and try again.'
+          : "Sorry, I couldn't get a response. Please try again."
+      addMessage({
+        role: 'assistant',
+        content: msg,
+        sessionId: conversationId || undefined
+      })
+      onError?.(error)
+    }
   })
   
   // Voice input state

@@ -12,41 +12,61 @@ import { CalibrationResult } from "@/components/CalibrationResult";
 import { FocusMode } from "@/components/FocusMode";
 
 export default function CalibratorPage() {
-  const { step, startCalibration, setResult, startFocus, reset } =
-    useCalibrationStore();
+  const {
+    step,
+    error: storeError,
+    startCalibration,
+    setResult,
+    startFocus,
+    reset,
+  } = useCalibrationStore();
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // On mount: check if user already has a profile → skip straight to result
+  // On mount: ALWAYS start from the default/reset state.
+  //
+  // Previously this page loaded the user's saved profile and jumped straight
+  // to the old result, and the in-memory store kept the previous run — so a
+  // new check-in retained the last calibration. Now every visit to the
+  // calibrator is a fresh check-in.
+  //
+  // The saved profile can still be viewed on purpose with /calibrate?view=profile
   useEffect(() => {
-    async function checkProfile() {
+    reset();
+
+    const wantsSavedProfile =
+      new URLSearchParams(window.location.search).get("view") === "profile";
+    if (!wantsSavedProfile) return;
+
+    let cancelled = false;
+    (async () => {
       try {
         const data = await apiGetProfile();
-        if (data.has_profile && data.profile) {
+        if (!cancelled && data.has_profile && data.profile) {
           setResult({
             brain_mode: data.profile.brain_mode,
             flag: data.profile.flag ?? null,
             assigned_loop: data.profile.assigned_loop,
-            path: data.profile.path,
-            path_length: data.profile.path.length,
-            model_version: data.profile.model_version,
-            key_version: data.profile.key_version,
           });
         }
       } catch {
-        // No profile or not logged in — show intro
+        // No profile or not logged in — fall through to the intro
       }
-    }
-    checkProfile();
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function handleBegin() {
     setLoading(true);
     setError(null);
     try {
-      const { session_id } = await apiStartSession();
-      startCalibration(session_id);
+      const { session_id, first_pair } = await apiStartSession();
+      startCalibration(session_id, first_pair);
     } catch (err: unknown) {
       const msg =
         err instanceof Error ? err.message : "Failed to start session";
@@ -60,10 +80,13 @@ export default function CalibratorPage() {
     startFocus(focus_session_id);
   }
 
+  const visibleError = error || storeError;
+
   return (
     <CalibrationShell>
-      {error && (
+      {visibleError && (
         <div
+          role="alert"
           style={{
             position: "fixed",
             top: "1.5rem",
@@ -80,7 +103,7 @@ export default function CalibratorPage() {
             textAlign: "center",
           }}
         >
-          {error}
+          {visibleError}
         </div>
       )}
 

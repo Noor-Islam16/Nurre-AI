@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { contextEngine } from '@/lib/ai/context-engine'
 import { getPersonality, type PersonalityConfig } from '@/lib/config/personalities'
@@ -6,6 +6,9 @@ import { getPersonality, type PersonalityConfig } from '@/lib/config/personaliti
 const ELEVENLABS_API_URL = 'https://api.elevenlabs.io/v1'
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY
 const ELEVENLABS_AGENT_ID = process.env.ELEVENLABS_AGENT_ID
+
+// Proactive opener for the first voice interaction (spoken by the agent)
+const CHECKIN_FIRST_MESSAGE = 'Shall we do a quick nervous system check-in?'
 
 // Cache: once tools are verified, skip re-checking
 let toolsVerified = false
@@ -94,6 +97,13 @@ const VOICE_TOOL_DEFINITIONS = [
       },
       required: ['taskId']
     }
+  },
+  {
+    type: 'client' as const,
+    name: 'start_checkin',
+    description: 'Open the Quick Check-In (calibrator) for the user. Call this immediately when the user agrees to a nervous system check-in.',
+    expects_response: true,
+    parameters: { type: 'object', properties: {} }
   },
   {
     type: 'client' as const,
@@ -253,6 +263,7 @@ async function ensureAgentTools(): Promise<void> {
 }
 
 interface SessionResponse {
+  firstMessage: string
   sessionId: string
   signedUrl: string
   agentId: string
@@ -280,6 +291,29 @@ export async function POST(req: NextRequest) {
         { status: 401 }
       )
     }
+
+    if (!ELEVENLABS_API_KEY || !ELEVENLABS_AGENT_ID) {
+      throw new Error('ElevenLabs credentials not configured')
+    }
+
+    // Start the slow external calls NOW so they overlap with the context
+    // queries below (they used to run one after another = noticeable lag).
+    const toolsPromise: Promise<void> = Promise.race([
+      ensureAgentTools(),
+      new Promise<void>(resolve => setTimeout(resolve, 6000)),
+    ]).catch(err => {
+      console.warn('ensureAgentTools failed (continuing):', err?.message)
+    })
+    const signedUrlPromise = fetch(
+      `${ELEVENLABS_API_URL}/convai/conversation/get-signed-url?agent_id=${ELEVENLABS_AGENT_ID}&include_conversation_id=true`,
+      {
+        method: 'GET',
+        headers: { 'xi-api-key': ELEVENLABS_API_KEY },
+        signal: AbortSignal.timeout(10000),
+      }
+    )
+    // Avoid unhandled rejection if we throw before awaiting it
+    signedUrlPromise.catch(() => {})
 
     // 2. Fetch user context using ContextEngine (consistent with Text AI)
     await contextEngine.initialize(user.id)
@@ -336,26 +370,9 @@ export async function POST(req: NextRequest) {
       topSignals: topSignals || []
     })
 
-    // 4. Initialize ElevenLabs session with signed URL
-    if (!ELEVENLABS_API_KEY || !ELEVENLABS_AGENT_ID) {
-      throw new Error('ElevenLabs credentials not configured')
-    }
-
-    // Ensure all client tools are configured on the agent (runs once per server lifecycle)
-    await ensureAgentTools()
-
-    // Get signed URL for conversation with the agent
-    // The conversation will be created when the WebSocket connects
-    // Note: include_conversation_id=true will return a conversation_id for tracking
-    const signedUrlResponse = await fetch(
-      `${ELEVENLABS_API_URL}/convai/conversation/get-signed-url?agent_id=${ELEVENLABS_AGENT_ID}&include_conversation_id=true`,
-      {
-        method: 'GET',
-        headers: {
-          'xi-api-key': ELEVENLABS_API_KEY
-        }
-      }
-    )
+    // 4. Wait for the tool setup + signed URL started above
+    await toolsPromise
+    const signedUrlResponse = await signedUrlPromise
 
     if (!signedUrlResponse.ok) {
       const errorText = await signedUrlResponse.text()
@@ -372,33 +389,34 @@ export async function POST(req: NextRequest) {
     // Signed URLs expire after 15 minutes
     const expiresAt = Date.now() + (15 * 60 * 1000)
 
-    // 5. Save conversation mapping to database for webhook lookup
-    // This allows the webhook to find the user_id from conversation_id
+    // 5. Save conversation mapping AFTER the response is sent — the client
+    // doesn't need to wait for this write before connecting.
     if (conversation_id) {
-      try {
-        await supabase.from('conversations').insert({
-          user_id: user.id,
-          session_id: conversation_id,
-          role: 'system',
-          content: 'Voice session initialized',
-          metadata: {
-            source: 'voice',
-            elevenlabs_conversation_id: conversation_id,
-            agent_id: ELEVENLABS_AGENT_ID,
-            session_type: 'voice',
-            initialized_at: new Date().toISOString(),
-            expires_at: new Date(expiresAt).toISOString()
-          }
-        })
-        console.log('Saved conversation mapping:', conversation_id, '→', user.id)
-      } catch (dbError) {
-        console.error('Failed to save conversation mapping:', dbError)
-        // Don't fail the request if saving fails - the session can still work
-      }
+      after(async () => {
+        try {
+          await supabase.from('conversations').insert({
+            user_id: user.id,
+            session_id: conversation_id,
+            role: 'system',
+            content: 'Voice session initialized',
+            metadata: {
+              source: 'voice',
+              elevenlabs_conversation_id: conversation_id,
+              agent_id: ELEVENLABS_AGENT_ID,
+              session_type: 'voice',
+              initialized_at: new Date().toISOString(),
+              expires_at: new Date(expiresAt).toISOString()
+            }
+          })
+        } catch (dbError) {
+          console.error('Failed to save conversation mapping:', dbError)
+        }
+      })
     }
 
     // 7. Return session credentials to frontend
     const response: SessionResponse = {
+      firstMessage: CHECKIN_FIRST_MESSAGE,
       sessionId,
       signedUrl: signed_url,
       agentId: ELEVENLABS_AGENT_ID,
@@ -551,6 +569,14 @@ Use these professional insights to guide your coaching approach.
 `
   }
 
+  // Proactive check-in opener
+  prompt += `\nOPENING:
+- Your first spoken line in every new conversation is exactly: "${CHECKIN_FIRST_MESSAGE}"
+- If the user agrees (yes, sure, okay, let's do it), call the start_checkin tool immediately and say nothing more.
+- If they decline or ask for something else, drop it and help with what they want. Do not ask again in this conversation.
+
+`
+
   // Add tool awareness
   prompt += `\nAVAILABLE TOOLS — You have tools to take real actions for the user. USE THEM when relevant:
 
@@ -560,6 +586,7 @@ Use these professional insights to guide your coaching approach.
 - create_task: Create a new task. Returns the new task's ID — remember it so you can edit or complete it later in this conversation. Parameters: title (required), optional description, priority (low/medium/high/urgent), dueDate, timeEstimate (minutes).
 - complete_task: Mark a task as done. Use when user says they finished something. Parameters: taskId (required — use the ID from Active Tasks above or from create_task result).
 - edit_task: Update a task. Use when user wants to change a task's details. Parameters: taskId (required), plus any fields to update (title, description, priority, timeEstimate, dueDate).
+- start_checkin: Open the Quick Check-In (nervous system calibrator). Call it the moment the user agrees to a check-in. No parameters.
 - play_music: Play background music. Use when user wants music for focus or relaxation. Parameters: category (focus/calm/productivity/sleep).
 - pause_music: Pause the currently playing music.
 - stop_music: Stop music completely.

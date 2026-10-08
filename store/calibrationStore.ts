@@ -1,22 +1,17 @@
 // ============================================================
 // Nuree Calibrator – Client State Store (Zustand)
-// Tree-based model — 3 or 4 pairs, stops when leaf reached
 // ============================================================
+// The decision tree is NOT in the browser. The server tells us which pair to
+// play next (see /api/calibration/start and /api/calibration/pair), and what
+// the final result is. This store only holds what is needed to render the UI.
 
 import { create } from "zustand";
 import type {
-  PairBehaviourData,
-  CalibrationOutputs,
+  PublicCalibrationOutputs,
+  PublicPair,
   LoopState,
-  BrainMode,
   CalibrationFlag,
 } from "@/types/calibration";
-import {
-  CALIBRATION_TREE,
-  getNextNode,
-  isCalibrationResult,
-} from "@/lib/scoringEngine";
-import type { TreeNode } from "@/types/calibration";
 
 export type CalibrationStep =
   | "idle"
@@ -31,82 +26,66 @@ interface CalibrationStore {
   session_id: string | null;
   step: CalibrationStep;
 
-  // Tree traversal state
-  choices: Array<"A" | "B">; // choices so far
-  current_node: TreeNode | null; // node currently being shown
+  // The pair currently being shown (clip ids only — supplied by the server)
+  current_pair: PublicPair | null;
   pair_sequence_index: number; // 1-based display index (1, 2, 3, 4)
 
-  // Submitted pairs (for DB)
-  submitted_pairs: PairBehaviourData[];
-
-  // Final outputs
-  outputs: CalibrationOutputs | null;
+  // Final outputs (brain mode / flag / loop only)
+  outputs: PublicCalibrationOutputs | null;
 
   // Focus mode
   focus_session_id: string | null;
 
+  // Last user-facing error (shown on the calibrator page)
+  error: string | null;
+
   // Actions
-  startCalibration: (session_id: string) => void;
-  recordChoice: (choice: "A" | "B", pair: PairBehaviourData) => void;
+  startCalibration: (session_id: string, first_pair: PublicPair) => void;
+  advanceToPair: (next_pair: PublicPair) => void;
   setProcessing: () => void;
-  setResult: (outputs: CalibrationOutputs) => void;
+  setResult: (outputs: PublicCalibrationOutputs) => void;
   startFocus: (focus_session_id: string) => void;
+  failCalibration: (message: string) => void;
   reset: () => void;
 }
 
 const INITIAL_STATE = {
   session_id: null,
   step: "idle" as CalibrationStep,
-  choices: [] as Array<"A" | "B">,
-  current_node: null as TreeNode | null,
+  current_pair: null as PublicPair | null,
   pair_sequence_index: 1,
-  submitted_pairs: [] as PairBehaviourData[],
-  outputs: null,
-  focus_session_id: null,
+  outputs: null as PublicCalibrationOutputs | null,
+  focus_session_id: null as string | null,
+  error: null as string | null,
 };
 
-export const useCalibrationStore = create<CalibrationStore>((set, get) => ({
+export const useCalibrationStore = create<CalibrationStore>((set) => ({
   ...INITIAL_STATE,
 
-  startCalibration: (session_id) =>
+  // Every new check-in starts from the default state — nothing from a previous
+  // run (result, focus session, error) is carried over.
+  startCalibration: (session_id, first_pair) =>
     set({
+      ...INITIAL_STATE,
       session_id,
       step: "pair",
-      choices: [],
-      current_node: CALIBRATION_TREE,
-      pair_sequence_index: 1,
-      submitted_pairs: [],
+      current_pair: first_pair,
     }),
 
-  recordChoice: (choice, pair) => {
-    const state = get();
-    const newChoices = [...state.choices, choice];
-    const newSubmitted = [...state.submitted_pairs, pair];
-    const nextNode = getNextNode(newChoices);
-
-    if (nextNode === null) {
-      // Tree is at a leaf — move to processing
-      set({
-        choices: newChoices,
-        submitted_pairs: newSubmitted,
-        pair_sequence_index: state.pair_sequence_index + 1,
-        step: "processing",
-      });
-    } else {
-      set({
-        choices: newChoices,
-        submitted_pairs: newSubmitted,
-        current_node: nextNode,
-        pair_sequence_index: state.pair_sequence_index + 1,
-      });
-    }
-  },
+  advanceToPair: (next_pair) =>
+    set((state) => ({
+      current_pair: next_pair,
+      pair_sequence_index: state.pair_sequence_index + 1,
+    })),
 
   setProcessing: () => set({ step: "processing" }),
 
-  setResult: (outputs) => set({ outputs, step: "result" }),
+  setResult: (outputs) => set({ outputs, step: "result", error: null }),
 
   startFocus: (focus_session_id) => set({ focus_session_id, step: "focus" }),
+
+  failCalibration: (message) =>
+    set({ ...INITIAL_STATE, error: message }),
 
   reset: () => set({ ...INITIAL_STATE }),
 }));

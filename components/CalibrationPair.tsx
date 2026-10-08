@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useCalibrationStore } from "@/store/calibrationStore";
 import {
   apiSubmitPair,
-  apiCompleteCalibration,
+  apiCompleteCalibrationWithRetry,
   getTrackUrl,
 } from "@/lib/calibrationApi";
 import type { PairBehaviourData } from "@/types/calibration";
@@ -23,13 +23,12 @@ const STEP_FEEDBACK: Record<number, string> = {
 export function CalibrationPair() {
   const {
     session_id,
-    current_node,
-    choices,
+    current_pair,
     pair_sequence_index,
-    submitted_pairs,
-    recordChoice,
+    advanceToPair,
     setProcessing,
     setResult,
+    failCalibration,
   } = useCalibrationStore();
 
   const { isPlaying: isLibraryPlaying, pause: pauseLibrary } = useMusicPlayer();
@@ -49,7 +48,7 @@ export function CalibrationPair() {
   const startedAtRef = useRef<number>(Date.now());
   const autoPlayBRef = useRef(false);
 
-  // Reset local state whenever tree node changes (= new pair)
+  // Reset local state whenever the pair changes (= new pair)
   useEffect(() => {
     setStateA("idle");
     setStateB("idle");
@@ -66,7 +65,7 @@ export function CalibrationPair() {
       audioRef.current.onended = null;
       audioRef.current = null;
     }
-  }, [current_node]);
+  }, [current_pair]);
 
   useEffect(() => {
     return () => {
@@ -74,12 +73,12 @@ export function CalibrationPair() {
     };
   }, []);
 
-  if (!current_node) return null;
+  if (!current_pair) return null;
 
   const pairIndex = pair_sequence_index; // 1-based display index
 
   function playTrack(track: "A" | "B", auto = false) {
-    if (!current_node || confirming) return;
+    if (!current_pair || confirming) return;
 
     if (isLibraryPlaying) {
       pauseLibrary();
@@ -87,8 +86,8 @@ export function CalibrationPair() {
 
     const url =
       track === "A"
-        ? getTrackUrl(current_node.track_a_id)
-        : getTrackUrl(current_node.track_b_id);
+        ? getTrackUrl(current_pair.track_a_id)
+        : getTrackUrl(current_pair.track_b_id);
 
     if (!auto) {
       if (currentPlaying !== null && currentPlaying !== track) {
@@ -161,38 +160,25 @@ export function CalibrationPair() {
   }
 
   async function handleConfirm(choice: "A" | "B") {
-    if (!current_node || !session_id || confirming) return;
+    if (!current_pair || !session_id || confirming) return;
     setConfirming(true);
     setError(null);
 
+    // The server derives the clip ids from its own tree and ignores these;
+    // they are sent only so the payload shape stays unchanged.
     const pairData: PairBehaviourData = {
       pair_index: pairIndex,
-      track_a_id: current_node.track_a_id,
-      track_b_id: current_node.track_b_id,
+      track_a_id: current_pair.track_a_id,
+      track_b_id: current_pair.track_b_id,
       final_choice: choice,
       decision_time_ms: Math.max(0, Date.now() - startedAtRef.current),
       replay_count_total: replays,
       switch_count: switches,
     };
 
+    let submitted;
     try {
-      await apiSubmitPair(session_id, pairData);
-
-      // Determine next step from tree
-      const nextChoices = [...choices, choice];
-      const { getNextNode } = await import("@/lib/scoringEngine");
-      const nextNode = getNextNode(nextChoices);
-
-      // Record choice in store (also advances node)
-      recordChoice(choice, pairData);
-
-      if (nextNode === null) {
-        // Leaf reached — complete calibration
-        setProcessing();
-        const allPairs = [...submitted_pairs, pairData];
-        const { outputs } = await apiCompleteCalibration(session_id);
-        setResult(outputs);
-      }
+      submitted = await apiSubmitPair(session_id, pairData);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to submit";
       setError(msg);
@@ -200,7 +186,28 @@ export function CalibrationPair() {
       setChosen(null);
       setStateA("idle");
       setStateB("idle");
+      return;
     }
+
+    // The server decides what comes next — the browser never walks the tree
+    if (submitted.is_complete || !submitted.next_pair) {
+      setProcessing();
+      try {
+        const { outputs } = await apiCompleteCalibrationWithRetry(session_id);
+        setResult(outputs);
+      } catch (err: unknown) {
+        // This component is unmounted by now (step === "processing"), so
+        // report through the store and let the page show it.
+        failCalibration(
+          err instanceof Error
+            ? err.message
+            : "Could not finish your check-in. Please try again.",
+        );
+      }
+      return;
+    }
+
+    advanceToPair(submitted.next_pair);
   }
 
   const progress = ((pairIndex - 1) / MAX_PAIRS) * 100;
@@ -217,12 +224,6 @@ export function CalibrationPair() {
         }}
       >
         <p className="nuree-label">Step {pairIndex}</p>
-        <p
-          className="nuree-label"
-          style={{ color: "#059669", fontSize: "0.75rem" }}
-        >
-          {current_node.label}
-        </p>
       </div>
 
       {/* Progress bar */}

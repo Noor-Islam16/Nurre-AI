@@ -1,10 +1,11 @@
 // hooks/use-chat-handler.ts
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { useUser } from '@/hooks/use-user'
 import { useChatStore } from '@/store/chat-store'
 import { useToast } from '@/components/ui/use-toast'
 import { RateLimitHandler } from '@/lib/client/rate-limit-handler'
 import { ResponseIdManager } from '@/lib/ai/response-id-manager'
+
+const REQUEST_TIMEOUT_MS = 60_000
 
 export interface ChatMessage {
   id: string
@@ -54,7 +55,6 @@ export function useChatHandler(options: UseChatHandlerOptions = {}) {
   const abortControllerRef = useRef<AbortController | null>(null)
   const retryCountRef = useRef(0)
   
-  const { user } = useUser()
   const chatStore = useChatStore()
   const { toast } = useToast()
   
@@ -82,6 +82,15 @@ export function useChatHandler(options: UseChatHandlerOptions = {}) {
   }, [])
 
   // Handle sending a message
+  //
+  // Reliability notes:
+  //  - The user message is added ONCE; retries re-send the same request
+  //    (previously a retry re-entered handleSend and duplicated the message).
+  //  - Only network errors, timeouts and 5xx responses are retried.
+  //  - There is a request timeout so the UI can never spin forever.
+  //  - We no longer silently block on `!user`: right after first load the
+  //    client user store may not be hydrated yet, which made the first
+  //    message do nothing until a refresh. The server enforces auth (401).
   const handleSend = useCallback(async (
     input: string,
     options?: {
@@ -89,8 +98,7 @@ export function useChatHandler(options: UseChatHandlerOptions = {}) {
       toolChoice?: string
       context?: string  // Add context for AI personality
     }
-  ) => {
-    // Validation
+  ): Promise<void> => {
     if (!input?.trim()) {
       toast({
         title: 'Message required',
@@ -107,15 +115,6 @@ export function useChatHandler(options: UseChatHandlerOptions = {}) {
       return
     }
 
-    if (!user) {
-      toast({
-        title: 'Authentication required',
-        description: 'Please sign in to continue'
-      })
-      return
-    }
-
-    // Check rate limit
     const endpoint = '/api/ai/chat'
     if (!RateLimitHandler.canMakeRequest(endpoint)) {
       const waitTime = RateLimitHandler.getWaitTime(endpoint)
@@ -129,7 +128,6 @@ export function useChatHandler(options: UseChatHandlerOptions = {}) {
     setIsLoading(true)
     setError(null)
 
-    // Create user message
     const userMessage: ChatMessage = {
       id: crypto.randomUUID(),
       role: 'user',
@@ -138,153 +136,157 @@ export function useChatHandler(options: UseChatHandlerOptions = {}) {
       conversationId
     }
 
-    // Add to messages
     setMessages(prev => [...prev, userMessage])
-    
-    // Persist if enabled
+
     if (persistMessages && conversationId) {
       chatStore.addMessageToConversation?.(conversationId, userMessage)
     }
 
-    // Callback
     onMessageSent?.(userMessage)
 
-    try {
-      // Create abort controller for cancellation
-      abortControllerRef.current = new AbortController()
+    const apiMessages = messages.concat(userMessage).map(m => ({
+      role: m.role,
+      content: m.content
+    }))
 
-      // Prepare messages for API
-      const apiMessages = messages.concat(userMessage).map(m => ({
-        role: m.role,
-        content: m.content
-      }))
-
-      // Prepare request
+    const buildBody = (prevId: string | null) => {
       const requestBody = {
         messages: apiMessages,
         conversationId,
-        previousResponseId,
+        previousResponseId: prevId,
         toolChoice: options?.toolChoice,
-        context: options?.context  // Pass context to API
+        context: options?.context
       }
-
-      // Add attachments if provided
-      let formData: FormData | undefined
       if (options?.attachments?.length) {
-        formData = new FormData()
+        const formData = new FormData()
         formData.append('data', JSON.stringify(requestBody))
         options.attachments.forEach((file, index) => {
-          formData!.append(`attachment_${index}`, file)
+          formData.append(`attachment_${index}`, file)
         })
+        return { body: formData as BodyInit, headers: {} as Record<string, string> }
       }
+      return {
+        body: JSON.stringify(requestBody) as BodyInit,
+        headers: { 'Content-Type': 'application/json' } as Record<string, string>
+      }
+    }
 
-      // Make request
-      const response = await fetch('/api/ai/chat', {
-        method: 'POST',
-        headers: formData ? {} : {
-          'Content-Type': 'application/json'
-        },
-        body: formData || JSON.stringify(requestBody),
-        signal: abortControllerRef.current.signal
-      })
+    // A non-retryable failure carries this flag
+    class FatalChatError extends Error {}
 
-      // Handle rate limit
-      RateLimitHandler.handleResponse(response, endpoint)
+    let usePrevId: string | null = previousResponseId
+    let lastError: Error | null = null
+    let succeeded = false
 
-      if (!response.ok) {
-        // Try to extract detailed error information
-        let errorDetails = response.statusText
-        let errorMessage = 'Chat request failed'
-        
+    try {
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        const controller = new AbortController()
+        abortControllerRef.current = controller
+        const timeout = setTimeout(() => controller.abort('timeout'), REQUEST_TIMEOUT_MS)
+
         try {
-          const errorBody = await response.json()
-          
-          // Check for validation error details
-          if (errorBody.details && Array.isArray(errorBody.details)) {
-            errorDetails = errorBody.details.map((d: any) => 
-              `${d.path}: ${d.message}`
-            ).join(', ')
-            errorMessage = 'Validation failed'
-          } else if (errorBody.error) {
-            errorDetails = errorBody.error
+          const { body, headers } = buildBody(usePrevId)
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers,
+            body,
+            signal: controller.signal
+          })
+
+          RateLimitHandler.handleResponse(response, endpoint)
+
+          if (!response.ok) {
+            let errorDetails = response.statusText
+            let errorMessage = 'Chat request failed'
+            try {
+              const errorBody = await response.json()
+              if (errorBody.details && Array.isArray(errorBody.details)) {
+                errorDetails = errorBody.details
+                  .map((d: any) => `${d.path}: ${d.message}`)
+                  .join(', ')
+                errorMessage = 'Validation failed'
+              } else if (errorBody.error) {
+                errorDetails = errorBody.error
+              }
+            } catch {
+              // Response wasn't JSON
+            }
+
+            if (response.status === 401) {
+              throw new FatalChatError('Authentication required: please sign in again')
+            }
+            if (response.status === 429) {
+              throw new FatalChatError('Rate limit exceeded: please wait a moment')
+            }
+            if (response.status >= 500) {
+              // retryable
+              throw new Error(`${errorMessage}: ${errorDetails}`)
+            }
+            // Other 4xx: if a stale previous response id may be the cause,
+            // drop it once and retry without it.
+            if (usePrevId && response.status === 400 && attempt < maxRetries) {
+              usePrevId = null
+              lastError = new Error(`${errorMessage}: ${errorDetails}`)
+              continue
+            }
+            throw new FatalChatError(`${errorMessage}: ${errorDetails}`)
           }
-          
-          // Log detailed error in development
-          if (process.env.NODE_ENV === 'development') {
-            console.error('Chat API error details:', {
-              status: response.status,
-              statusText: response.statusText,
-              error: errorBody.error,
-              details: errorBody.details
-            })
+
+          const data = await response.json()
+          handleResponse(data, conversationId)
+          succeeded = true
+          break
+        } catch (err: any) {
+          if (err instanceof FatalChatError) {
+            lastError = err
+            break
           }
-        } catch {
-          // Response wasn't JSON or couldn't be parsed
-          console.warn('Could not parse error response body')
+          if (err?.name === 'AbortError' && controller.signal.reason !== 'timeout') {
+            // Cancelled by the user or unmount — stop quietly
+            return
+          }
+          lastError =
+            err?.name === 'AbortError'
+              ? new Error('The response took too long. Please try again.')
+              : err instanceof Error
+                ? err
+                : new Error('Network error')
+          if (attempt < maxRetries) {
+            await new Promise(r => setTimeout(r, 600 * (attempt + 1)))
+          }
+        } finally {
+          clearTimeout(timeout)
         }
-        
-        throw new Error(`${errorMessage}: ${errorDetails}`)
       }
-
-      // Handle response
-      const data = await response.json()
-      
-      // Check if tools need execution (new field from task 099)
-      if (data.requires_tool_execution) {
-        console.log('Response requires tool execution:', data.tool_calls)
-      }
-      
-      handleResponse(data, conversationId)
-
-      // Reset retry count on success
-      retryCountRef.current = 0
-
-    } catch (err: any) {
-      console.error('Chat error:', err)
-      
-      // Handle abort
-      if (err.name === 'AbortError') {
-        console.log('Chat request cancelled')
-        return
-      }
-
-      // Retry logic
-      if (retryCountRef.current < maxRetries && !err.message.includes('Rate limit')) {
-        retryCountRef.current++
-        console.log(`Retrying... Attempt ${retryCountRef.current} of ${maxRetries}`)
-        setTimeout(() => handleSend(input, options), 1000 * retryCountRef.current)
-        return
-      }
-
-      setError(err)
-      onError?.(err)
-      
-      // Provide more specific error messages in toasts
-      let toastTitle = 'Failed to send message'
-      let toastDescription = err.message || 'Please try again'
-      
-      if (err.message?.includes('Validation failed')) {
-        toastTitle = 'Invalid message format'
-        toastDescription = err.message.replace('Validation failed: ', '')
-      } else if (err.message?.includes('Authentication')) {
-        toastTitle = 'Authentication required'
-        toastDescription = 'Please sign in to continue'
-      } else if (err.message?.includes('Rate limit')) {
-        toastTitle = 'Too many requests'
-        toastDescription = 'Please wait a moment before trying again'
-      }
-      
-      toast({
-        title: toastTitle,
-        description: toastDescription
-      })
     } finally {
       setIsLoading(false)
       abortControllerRef.current = null
+      retryCountRef.current = 0
     }
+
+    if (succeeded) return
+
+    const err = lastError ?? new Error('Failed to send message')
+    console.error('Chat error:', err)
+    setError(err)
+    onError?.(err)
+
+    let toastTitle = 'Failed to send message'
+    let toastDescription = err.message || 'Please try again'
+    if (err.message?.includes('Validation failed')) {
+      toastTitle = 'Invalid message format'
+      toastDescription = err.message.replace('Validation failed: ', '')
+    } else if (err.message?.includes('Authentication')) {
+      toastTitle = 'Authentication required'
+      toastDescription = 'Please sign in to continue'
+    } else if (err.message?.includes('Rate limit')) {
+      toastTitle = 'Too many requests'
+      toastDescription = 'Please wait a moment before trying again'
+    }
+    toast({ title: toastTitle, description: toastDescription })
+    return
   }, [
     isLoading,
-    user,
     conversationId,
     previousResponseId,
     persistMessages,

@@ -162,16 +162,14 @@ export async function middleware(request: NextRequest) {
   if (user && isAdminRoute) {
     const ADMIN_EMAILS = process.env.ADMIN_EMAILS?.split(',').map(email => email.trim()) || []
 
-    // Only check if ADMIN_EMAILS is configured
-    if (ADMIN_EMAILS.length > 0) {
-      if (!ADMIN_EMAILS.includes(user.email || '')) {
-        // Not an admin, redirect to dashboard
-        const redirectResponse = NextResponse.redirect(new URL('/dashboard', request.url))
-        Object.entries(securityHeadersToApply).forEach(([key, value]) => {
-          redirectResponse.headers.set(key, value)
-        })
-        return redirectResponse
-      }
+    // Fail CLOSED: with no ADMIN_EMAILS configured, nobody is an admin.
+    if (ADMIN_EMAILS.length === 0 || !ADMIN_EMAILS.includes(user.email || '')) {
+      // Not an admin, redirect to dashboard
+      const redirectResponse = NextResponse.redirect(new URL('/dashboard', request.url))
+      Object.entries(securityHeadersToApply).forEach(([key, value]) => {
+        redirectResponse.headers.set(key, value)
+      })
+      return redirectResponse
     }
   }
   

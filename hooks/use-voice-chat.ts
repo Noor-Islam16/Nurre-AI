@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { VoiceConversation } from '@elevenlabs/client'
 import { createClient } from '@/lib/supabase/client'
 import { queueEmbeddingJob } from '@/lib/ai/vector/enqueue-embedding-job'
@@ -11,6 +12,19 @@ import { conversationManager } from '@/lib/voice/conversation-manager'
 import type { VoiceStatus, TranscriptItem } from '@/store/voice-store'
 
 export type { VoiceStatus, TranscriptItem }
+
+const INIT_TIMEOUT_MS = 12_000
+const CONNECT_TIMEOUT_MS = 15_000
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label} timed out. Please try again.`)), ms)
+    promise.then(
+      v => { clearTimeout(t); resolve(v) },
+      e => { clearTimeout(t); reject(e) }
+    )
+  })
+}
 
 type CoachingMode = 'direct' | 'balanced' | 'gentle'
 type StoreMode = 'local' | 'global'
@@ -31,6 +45,12 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
     storeMode = 'local',
     voiceMode = 'dashboard'
   } = options
+
+  const router = useRouter()
+  // Prevents double-clicks / re-renders from starting two sessions at once
+  const startingRef = useRef(false)
+  const userCtxRef = useRef<AudioContext | null>(null)
+  const remoteCtxRef = useRef<AudioContext | null>(null)
 
   // Global store (only used when storeMode is 'global')
   const globalStore = useVoiceStore()
@@ -179,6 +199,7 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
   const attachLevelMeter = useCallback((stream: MediaStream) => {
     try {
       const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+      userCtxRef.current = ctx
       const analyser = ctx.createAnalyser()
       analyser.fftSize = 256
       const source = ctx.createMediaStreamSource(stream)
@@ -209,12 +230,17 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
     rafRef.current = null
     analyserRef.current?.disconnect()
     analyserRef.current = null
+    // Browsers cap the number of AudioContexts — close ours so repeated
+    // sessions don't degrade audio until the page is refreshed.
+    userCtxRef.current?.close().catch(() => {})
+    userCtxRef.current = null
     setUserAudioLevel(0)
   }, [])
 
   const attachRemoteLevelMeter = useCallback((stream: MediaStream) => {
     try {
       const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+      remoteCtxRef.current = ctx
       const analyser = ctx.createAnalyser()
       analyser.fftSize = 256
       const source = ctx.createMediaStreamSource(stream)
@@ -245,6 +271,8 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
     remoteRAFRef.current = null
     remoteAnalyserRef.current?.disconnect()
     remoteAnalyserRef.current = null
+    remoteCtxRef.current?.close().catch(() => {})
+    remoteCtxRef.current = null
     setAssistantAudioLevel(0)
   }, [])
 
@@ -333,6 +361,7 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
   }, [])
 
   const stopSession = useCallback(async () => {
+    startingRef.current = false
     // IMMEDIATELY update state — don't block on DB operations
     setStatus('ended')
     setPendingUserTranscript('')
@@ -390,6 +419,8 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
   stopSessionRef.current = stopSession
 
   const startSession = useCallback(async () => {
+    if (startingRef.current) return
+    startingRef.current = true
     try {
       // In global mode, check if session already exists
       if (isGlobal && conversationManager.isActive()) {
@@ -398,6 +429,7 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
         if (voiceMode === 'dashboard') {
           globalStore.switchToDashboard()
         }
+        startingRef.current = false
         return
       }
 
@@ -416,46 +448,62 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
 
       lastSavedIndexRef.current = 0
 
-      // Get session credentials from our API
-      console.log('[Voice] Fetching session credentials from /api/voice/init-session')
-      const initResponse = await fetch('/api/voice/init-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      })
-
-      console.log('[Voice] Init response status:', initResponse.status, initResponse.statusText)
-
-      if (!initResponse.ok) {
-        const errorText = await initResponse.text()
-        console.error('[Voice] Init session failed:', errorText)
-        throw new Error(`Failed to initialize session: ${initResponse.status} ${errorText}`)
+      // Ask for the microphone and fetch session credentials AT THE SAME TIME.
+      // Previously these ran one after the other, so the user waited for the
+      // server before even seeing the permission prompt (the main "lag").
+      const fetchInit = async () => {
+        let lastErr: Error | null = null
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const controller = new AbortController()
+          const timer = setTimeout(() => controller.abort(), INIT_TIMEOUT_MS)
+          try {
+            const res = await fetch('/api/voice/init-session', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              signal: controller.signal,
+            })
+            if (res.status === 401) throw Object.assign(new Error('Please sign in to use voice.'), { fatal: true })
+            if (!res.ok) {
+              const text = await res.text().catch(() => '')
+              throw new Error(`Failed to initialize session: ${res.status} ${text}`)
+            }
+            const data = await res.json()
+            if (data.error) throw new Error(`Session initialization failed: ${data.error}`)
+            if (!data.signedUrl) throw new Error('Invalid response: missing signedUrl')
+            return data
+          } catch (e: any) {
+            if (e?.fatal) throw e
+            lastErr = e?.name === 'AbortError'
+              ? new Error('Voice server is slow to respond. Please try again.')
+              : e
+            if (attempt === 0) await new Promise(r => setTimeout(r, 400))
+          } finally {
+            clearTimeout(timer)
+          }
+        }
+        throw lastErr ?? new Error('Failed to initialize session')
       }
 
-      const responseData = await initResponse.json()
-      console.log('[Voice] Session credentials received:', {
-        hasSignedUrl: !!responseData.signedUrl,
-        hasSystemPrompt: !!responseData.systemPrompt,
-        sessionId: responseData.sessionId,
-        hasError: !!responseData.error
-      })
+      const micPromise = navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+      const initPromise = fetchInit()
+      // Avoid unhandled rejection if one side fails first
+      micPromise.catch(() => {})
+      initPromise.catch(() => {})
 
-      // Check if response contains an error field (API returned 200 but with error)
-      if (responseData.error) {
-        throw new Error(`Session initialization failed: ${responseData.error}`)
+      let stream: MediaStream
+      let responseData: any
+      try {
+        ;[stream, responseData] = await Promise.all([micPromise, initPromise])
+      } catch (e) {
+        // Release the mic if it was granted but init failed
+        micPromise.then(st => st.getTracks().forEach(t => t.stop())).catch(() => {})
+        throw e
       }
 
-      // Validate required fields
-      if (!responseData.signedUrl) {
-        throw new Error('Invalid response: missing signedUrl')
-      }
-
-      const { sessionId: newSessionId, signedUrl, systemPrompt, voiceId, metadata, userId } = responseData
+      const { sessionId: newSessionId, signedUrl, systemPrompt, voiceId, firstMessage } = responseData
 
       setSessionId(newSessionId)
       setSessionLabel(`Voice ${new Date().toLocaleTimeString()}`)
-
-      // Get user media
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
 
       // In global mode, use singleton manager
       if (isGlobal) {
@@ -552,6 +600,18 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
             } catch { return 'Failed to stop focus session.' }
           },
 
+          // ===== Calibrator (Quick Check-In) =====
+          // The agent opens with "Shall we do a quick nervous system check-in?"
+          // and calls this when the user agrees. We end the voice session and
+          // go straight to the calibrator (which always starts fresh).
+          start_checkin: async () => {
+            setTimeout(async () => {
+              try { await stopSessionRef.current() } catch {}
+              router.push('/calibrate')
+            }, 800)
+            return 'Opening the check-in now. Do not say anything else.'
+          },
+
           // ===== Music Control =====
           play_music: async (params: Record<string, any>) => {
             const category = params.category || 'focus'
@@ -597,14 +657,17 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
       // Log registered tool names for debugging
       console.log('[Voice] Registered clientTools:', Object.keys(clientToolHandlers))
 
-      const conversation = await VoiceConversation.startSession({
+      const sessionOptions = (withFirstMessage: boolean): any => ({
         signedUrl,
         // Override agent's system prompt and voice with personalized version
         overrides: {
           agent: {
             prompt: {
               prompt: systemPrompt
-            }
+            },
+            // Proactive opener (needs "First message" override enabled in
+            // ElevenLabs Security settings; we retry without it if refused)
+            ...(withFirstMessage && firstMessage ? { firstMessage } : {})
           },
           // TTS voice override for personality-specific voice and speed
           // NOTE: Requires "Voice" override to be enabled in ElevenLabs Security settings
@@ -636,15 +699,15 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
           }
         },
         // ===== Session callbacks =====
-        onConnect: (props) => {
+        onConnect: (props: any) => {
           console.log('[Voice] ElevenLabs conversation connected:', props.conversationId)
           setStatus('listening')
         },
-        onDisconnect: (details) => {
+        onDisconnect: (details: any) => {
           console.log('[Voice] ElevenLabs conversation disconnected:', details.reason)
           stopSessionRef.current()
         },
-        onMessage: (props) => {
+        onMessage: (props: any) => {
           // Handle transcript messages - source is 'user' or 'ai'
           const { message, source } = props
 
@@ -682,7 +745,7 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
             }
           }
         },
-        onModeChange: (props) => {
+        onModeChange: (props: any) => {
           // Handle mode changes (speaking, listening, etc.)
           if (props.mode === 'speaking') {
             setStatus('speaking')
@@ -690,7 +753,7 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
             setStatus('listening')
           }
         },
-        onError: (message, context) => {
+        onError: (message: any, context: any) => {
           console.error('[Voice] ElevenLabs conversation error:', message, context)
           // Log tool-related errors specifically
           if (context && 'clientToolName' in (context as any)) {
@@ -700,6 +763,24 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
           stopSessionRef.current()
         }
       })
+
+      let conversation: VoiceConversation
+      try {
+        conversation = await withTimeout(
+          VoiceConversation.startSession(sessionOptions(true)),
+          CONNECT_TIMEOUT_MS,
+          'Connecting to voice'
+        )
+      } catch (e) {
+        if (!firstMessage) throw e
+        // The opener override may be disabled in ElevenLabs — retry plain.
+        console.warn('[Voice] Retrying without firstMessage override:', e)
+        conversation = await withTimeout(
+          VoiceConversation.startSession(sessionOptions(false)),
+          CONNECT_TIMEOUT_MS,
+          'Connecting to voice'
+        )
+      }
 
       // Store conversation in singleton for global mode, or local ref for local mode
       if (isGlobal) {
@@ -745,6 +826,7 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
         silenceIntervalRef.current = monitorInterval as unknown as number
       }
 
+      startingRef.current = false
     } catch (err: any) {
       console.error('[Voice] Start session failed:', err)
       console.error('[Voice] Error details:', {
@@ -778,7 +860,7 @@ export function useVoiceChat(options: UseVoiceChatOptions = {}) {
 
       stopSessionRef.current()
     }
-  }, [attachLevelMeter, attachRemoteLevelMeter, autoSaveTranscript, saveTranscriptToDatabase, isGlobal, globalStore, voiceMode, setStatus, setElapsed, setTranscript, setPendingUserTranscript, setPendingAssistantTranscript, setMicPermissionError, setSessionId, setUserAudioLevel, setAssistantAudioLevel])
+  }, [attachLevelMeter, attachRemoteLevelMeter, autoSaveTranscript, saveTranscriptToDatabase, isGlobal, globalStore, voiceMode, router, voiceSpeed, setStatus, setElapsed, setTranscript, setPendingUserTranscript, setPendingAssistantTranscript, setMicPermissionError, setSessionId, setUserAudioLevel, setAssistantAudioLevel])
 
   const toggleMute = useCallback(() => {
     setMuted(m => {

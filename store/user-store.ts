@@ -52,6 +52,79 @@ interface UserState {
 // Prevent multiple simultaneous initialization calls
 let initializationPromise: Promise<void> | null = null
 
+/**
+ * Supabase reports "no one is signed in" as an AuthSessionMissingError.
+ * That is a NORMAL state (login page, signed-out visitor), not a failure —
+ * it must not be logged as an error and must not abort initialization.
+ */
+function isSessionMissingError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const e = error as { name?: string; message?: string }
+  return (
+    e.name === 'AuthSessionMissingError' ||
+    /auth session missing/i.test(e.message ?? '')
+  )
+}
+
+// Keep the "listener registered" flag on globalThis so it survives hot reloads
+// in development (otherwise every HMR would stack another subscription).
+const AUTH_LISTENER_FLAG = '__nuree_user_store_auth_listener__'
+
+/**
+ * Subscribe to auth changes EXACTLY ONCE, before we know whether anyone is
+ * signed in.
+ *
+ * Previously the subscription was created only after a successful sign-in
+ * check. If the app started signed-out (login page) the listener was never
+ * registered, so after logging in the store still believed nobody was signed
+ * in — chat refused to send until the page was refreshed.
+ */
+function registerAuthListener(
+  set: (partial: Partial<UserState>) => void,
+  get: () => UserState,
+) {
+  if (typeof window === 'undefined') return
+  const g = globalThis as Record<string, unknown>
+  if (g[AUTH_LISTENER_FLAG]) return
+  g[AUTH_LISTENER_FLAG] = true
+
+  const supabase = createClient()
+  supabase.auth.onAuthStateChange((event, session) => {
+    if (event === 'SIGNED_OUT') {
+      get().clear()
+      return
+    }
+
+    if (
+      (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') &&
+      session?.user
+    ) {
+      const previous = get().user
+      set({
+        user: session.user,
+        isInitialized: true,
+        isLoading: false,
+        error: null,
+      })
+
+      // Only (re)load the profile when the user actually changed or we have
+      // none yet — not on every silent token refresh.
+      if (!previous || previous.id !== session.user.id || !get().profile) {
+        // Defer: never call back into Supabase from inside the auth callback
+        // (it can deadlock on the auth lock).
+        setTimeout(() => {
+          void get().refreshProfile()
+        }, 0)
+      }
+      return
+    }
+
+    if (event === 'USER_UPDATED' && session?.user) {
+      set({ user: session.user })
+    }
+  })
+}
+
 export const useUserStore = create<UserState>((set, get) => ({
   user: null,
   profile: null,
@@ -72,6 +145,10 @@ export const useUserStore = create<UserState>((set, get) => ({
       return initializationPromise
     }
 
+    // Listen for sign-in / sign-out from the very start, whatever the
+    // current state is (see registerAuthListener).
+    registerAuthListener(set, get)
+
     // Start initialization
     initializationPromise = (async () => {
       set({ isLoading: true, error: null })
@@ -82,7 +159,8 @@ export const useUserStore = create<UserState>((set, get) => ({
         // Get user from auth
         const { data: { user }, error: authError } = await supabase.auth.getUser()
 
-        if (authError) {
+        // "Auth session missing" just means nobody is signed in — not an error.
+        if (authError && !isSessionMissingError(authError)) {
           throw authError
         }
 
@@ -116,29 +194,6 @@ export const useUserStore = create<UserState>((set, get) => ({
           isInitialized: true,
           error: null
         })
-
-        // Set up auth state change listener
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(
-          async (event, session) => {
-            if (event === 'SIGNED_OUT') {
-              get().clear()
-            } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-              if (session?.user) {
-                // Refresh user data
-                set({ user: session.user })
-                await get().refreshProfile()
-              }
-            } else if (event === 'USER_UPDATED') {
-              if (session?.user) {
-                set({ user: session.user })
-              }
-            }
-          }
-        )
-
-        // Store subscription for cleanup if needed
-        // Note: In a real app, you might want to store this for cleanup
-        // For now, the listener persists for the app lifetime
 
       } catch (error) {
         console.error('User store initialization failed:', error)

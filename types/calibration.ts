@@ -88,11 +88,33 @@ export interface CalibrationOutputs {
   key_version: string;
 }
 
+// ─── Public (browser-safe) shapes ───────────────────────────
+//
+// The decision tree, the clip→mode mapping, the path a user took and the
+// model/key versions are proprietary and must NEVER be sent to the browser.
+// The browser only ever learns:
+//   • which two clips to play next (PublicPair)
+//   • the final result (PublicCalibrationOutputs)
+
+/** The only per-step information the browser receives. */
+export interface PublicPair {
+  track_a_id: string;
+  track_b_id: string;
+}
+
+/** The only result information the browser receives. */
+export type PublicCalibrationOutputs = Pick<
+  CalibrationOutputs,
+  "brain_mode" | "flag" | "assigned_loop"
+>;
+
 // ─── API Payloads ───────────────────────────────────────────
 
 export interface StartSessionResponse {
   session_id: string;
   started_at: string;
+  /** The first pair to play — the server owns the tree, not the browser. */
+  first_pair: PublicPair;
 }
 
 export interface SubmitPairResponse {
@@ -100,24 +122,23 @@ export interface SubmitPairResponse {
   recorded: boolean;
   pairs_submitted: number;
   is_complete: boolean;
+  /** Next pair to play, or null when the calibration is complete. */
+  next_pair: PublicPair | null;
 }
 
 export interface CompleteCalibrationResponse {
   session_id: string;
-  outputs: CalibrationOutputs;
+  outputs: PublicCalibrationOutputs;
 }
 
 export interface GetProfileResponse {
   has_profile: boolean;
   profile?: {
-    session_id: string;
+    session_id: string | null;
     brain_mode: BrainMode;
     flag: CalibrationFlag;
     assigned_loop: LoopState;
-    path: number[];
     calibrated_at: string;
-    model_version: string;
-    key_version: string;
   };
 }
 

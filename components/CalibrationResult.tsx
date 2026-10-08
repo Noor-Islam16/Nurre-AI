@@ -287,81 +287,10 @@ export function CalibrationResult({ onRecalibrate, onEnterFocus }: Props) {
         </button>
       </div>
 
-      {/* Path trail — shows the calibration sequence */}
-      <div
-        className="nuree-card fade-up fade-up-delay-2"
-        style={{
-          padding: "1.25rem 1.5rem",
-          marginBottom: "1rem",
-          maxWidth: "100%",
-        }}
-      >
-        <p className="nuree-label" style={{ marginBottom: "0.75rem" }}>
-          Calibration path
-        </p>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "0.4rem",
-            flexWrap: "wrap",
-          }}
-        >
-          {outputs.path.map((clip, i) => (
-            <div
-              key={i}
-              style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}
-            >
-              <span
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: "32px",
-                  height: "32px",
-                  borderRadius: "50%",
-                  background:
-                    i === outputs.path.length - 1
-                      ? loopColor
-                      : "rgba(5,150,105,0.1)",
-                  color: i === outputs.path.length - 1 ? "#fff" : loopColor,
-                  fontSize: "0.75rem",
-                  fontWeight: 500,
-                  fontVariantNumeric: "tabular-nums",
-                }}
-              >
-                {clip}
-              </span>
-              {i < outputs.path.length - 1 && (
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                  <path
-                    d="M2 5h6M5 2l3 3-3 3"
-                    stroke="#9ca3af"
-                    strokeWidth="1.2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              )}
-            </div>
-          ))}
-        </div>
-        <p
-          style={{
-            fontSize: "0.72rem",
-            color: "#9ca3af",
-            marginTop: "0.75rem",
-          }}
-        >
-          {outputs.path_length} pair{outputs.path_length !== 1 ? "s" : ""} ·
-          model {outputs.model_version}
-        </p>
-      </div>
-
       {/* Recalibrate */}
       <div className="fade-up fade-up-delay-3" style={{ textAlign: "center" }}>
         <button className="nuree-btn nuree-btn-ghost" onClick={onRecalibrate}>
-          Re-calibrate
+          Start a new check-in
         </button>
       </div>
     </div>

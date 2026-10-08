@@ -66,10 +66,6 @@ export function SoundsPopover({ disabled = false, onSoundChange }: SoundsPopover
             brain_mode: data.profile.brain_mode,
             flag: data.profile.flag ?? null,
             assigned_loop: data.profile.assigned_loop,
-            path: data.profile.path,
-            path_length: data.profile.path.length,
-            model_version: data.profile.model_version,
-            key_version: data.profile.key_version,
           })
         }
       } catch (err) {
